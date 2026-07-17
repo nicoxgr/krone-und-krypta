@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Krone &amp; Krypta</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game" class="mode-story">
+
+    <!-- ============ HEADER: Ressourcen ============ -->
+    <header id="resource-bar">
+      <div class="res res-army" id="res-army">
+        <div class="res-head">
+          <span class="res-icon">🛡️</span>
+          <span class="res-name">Armee</span>
+          <span class="res-val" id="val-army">50%</span>
+        </div>
+        <div class="res-track">
+          <div class="res-ghost" id="ghost-army"></div>
+          <div class="res-fill" id="fill-army"></div>
+        </div>
+      </div>
+      <div class="res res-faith" id="res-faith">
+        <div class="res-head">
+          <span class="res-icon">🙏</span>
+          <span class="res-name">Orden</span>
+          <span class="res-val" id="val-faith">50%</span>
+        </div>
+        <div class="res-track">
+          <div class="res-ghost" id="ghost-faith"></div>
+          <div class="res-fill" id="fill-faith"></div>
+        </div>
+      </div>
+      <div class="res res-treasury" id="res-treasury">
+        <div class="res-head">
+          <span class="res-icon">💰</span>
+          <span class="res-name">Schatzkammer</span>
+          <span class="res-val" id="val-treasury">50%</span>
+        </div>
+        <div class="res-track">
+          <div class="res-ghost" id="ghost-treasury"></div>
+          <div class="res-fill" id="fill-treasury"></div>
+        </div>
+      </div>
+      <div class="res res-hp" id="res-hp">
+        <div class="res-head">
+          <span class="res-icon">❤️</span>
+          <span class="res-name">Lebenspunkte</span>
+          <span class="res-val" id="val-hp">100%</span>
+        </div>
+        <div class="res-track">
+          <div class="res-ghost" id="ghost-hp"></div>
+          <div class="res-fill" id="fill-hp"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ============ LINKE SPALTE: Charakter ============ -->
+    <aside id="left-panel" class="panel">
+      <div class="panel-inner">
+        <div class="portrait-box">
+          <div class="portrait">🤴</div>
+          <div class="portrait-name">Regent von Aldenmark</div>
+          <div class="gold-row">🪙 <span id="gold-val">0</span> Gold</div>
+        </div>
+
+        <h3 class="panel-h">Ausrüstung</h3>
+        <div id="equip-list"></div>
+
+        <h3 class="panel-h">Beutel</h3>
+        <div id="potion-list"></div>
+
+        <h3 class="panel-h">Kampfwerte</h3>
+        <div id="stats-box"></div>
+
+        <div id="player-status-wrap">
+          <h3 class="panel-h">Effekte</h3>
+          <div id="player-statuses"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============ MITTE: Bühne ============ -->
+    <main id="stage">
+      <div id="situation-text"></div>
+      <div id="card-zone">
+        <div id="swipe-card">
+          <span class="corner c-tl"></span><span class="corner c-tr"></span>
+          <span class="corner c-bl"></span><span class="corner c-br"></span>
+          <div class="card-emoji" id="card-emoji">👑</div>
+          <div class="card-title" id="card-title"></div>
+          <div class="card-doors" id="card-doors" hidden>
+            <div class="door" id="door-left"><span class="door-ico"></span><span class="door-label"></span></div>
+            <div class="door-sep">⁘</div>
+            <div class="door" id="door-right"><span class="door-ico"></span><span class="door-label"></span></div>
+          </div>
+          <div class="ov ov-left" id="ov-left"></div>
+          <div class="ov ov-right" id="ov-right"></div>
+          <div class="ov ov-up" id="ov-up"></div>
+          <div class="ov ov-down" id="ov-down"></div>
+        </div>
+      </div>
+      <div id="pips-row"></div>
+      <div id="card-caption"></div>
+      <div id="toast"></div>
+    </main>
+
+    <!-- ============ RECHTE SPALTE: Kontext ============ -->
+    <aside id="right-panel" class="panel">
+      <div class="panel-inner">
+
+        <div id="panel-story" class="ctx-panel">
+          <h3 class="panel-h">Chronik</h3>
+          <div class="day-big">☀️ Tag <span id="day-val">1</span></div>
+          <div id="chronicle"></div>
+          <h3 class="panel-h">Dungeons</h3>
+          <div id="dungeon-status"></div>
+        </div>
+
+        <div id="panel-dungeon" class="ctx-panel" hidden>
+          <h3 class="panel-h">Expedition</h3>
+          <div class="dungeon-name" id="dungeon-name"></div>
+          <div class="depth-row">Ebene <span id="depth-val">1/5</span></div>
+          <div class="depth-track"><div class="depth-fill" id="depth-fill"></div></div>
+          <div class="torch-row"><span class="torch-flame">🔥</span> Fackeln: <span id="torch-val">12</span></div>
+          <div id="runbuff-list"></div>
+          <button id="retreat-btn" type="button">🏳️ Rückzug zur Burg</button>
+        </div>
+
+        <div id="panel-combat" class="ctx-panel" hidden>
+          <div class="intent-box" id="intent-box">
+            <div class="intent-label">Nächste Aktion</div>
+            <div class="intent-main" id="intent-main">⚔️ 7</div>
+            <div class="intent-desc" id="intent-desc"></div>
+          </div>
+          <div class="enemy-box">
+            <div class="enemy-portrait" id="enemy-portrait">💀</div>
+            <div class="enemy-name" id="enemy-name"></div>
+            <div class="enemy-tag" id="enemy-tag"></div>
+            <div class="enemy-hp-wrap">
+              <div class="enemy-hp-track">
+                <div class="res-ghost" id="enemy-hp-ghost"></div>
+                <div class="res-fill enemy-hp-fill" id="enemy-hp-fill"></div>
+              </div>
+              <div class="enemy-hp-text" id="enemy-hp-text"></div>
+            </div>
+            <div class="enemy-chips" id="enemy-chips"></div>
+          </div>
+          <h3 class="panel-h">Kampf-Log</h3>
+          <div id="combat-log"></div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- ============ FUSSZEILE ============ -->
+    <footer id="hint-bar"></footer>
+
+    <!-- ============ GAME OVER ============ -->
+    <div id="overlay-gameover" hidden>
+      <div class="go-inner">
+        <div class="go-skull" id="go-skull">💀</div>
+        <h1 class="go-title" id="go-title">Dein Ende</h1>
+        <p class="go-reason" id="go-reason"></p>
+        <div class="go-stats" id="go-stats"></div>
+        <button id="restart-btn" type="button">⚜️ Ein neuer Regent besteigt den Thron</button>
+      </div>
+    </div>
+
+    <div id="fx-layer"></div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
