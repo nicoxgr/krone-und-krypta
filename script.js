@@ -1839,9 +1839,19 @@ function setupInput() {
   });
 }
 
+/** Löst eine Karte GENAU EINMAL auf — Schutz vor Doppel-Auswertung
+    bei gemischter Maus-/Tastatur-Eingabe. */
+function commitSwipe(card, dir) {
+  if (card._resolved || inputLocked) return;
+  card._resolved = true;
+  inputLocked = true;
+  clearPreview();
+  flyOut(dir).then(() => card.onResolve(dir));
+}
+
 /** Löst einen Swipe per Tastatur aus — mit denselben Regeln wie per Maus. */
 function keySwipe(dir) {
-  if (inputLocked || state.mode === 'GAME_OVER' || !state.currentCard) return;
+  if (inputLocked || drag.active || state.mode === 'GAME_OVER' || !state.currentCard) return;
   const combat = state.mode === 'COMBAT';
   if ((dir === 'up' || dir === 'down') && !combat) return;
   const card = state.currentCard;
@@ -1849,13 +1859,11 @@ function keySwipe(dir) {
     const chk = card.canSwipe(dir);
     if (chk !== true) { toast(chk); return; }
   }
-  inputLocked = true;
-  clearPreview();
   const ov = { left: el.ovLeft, right: el.ovRight, up: el.ovUp, down: el.ovDown }[dir];
   ov.style.opacity = 1;
   drag.dx = dir === 'left' ? -80 : dir === 'right' ? 80 : 0;
   drag.dy = dir === 'up' ? -80 : dir === 'down' ? 80 : 0;
-  flyOut(dir).then(() => card.onResolve(dir));
+  commitSwipe(card, dir);
 }
 
 function applyDrag() {
@@ -1902,6 +1910,7 @@ function finishDrag(e) {
   if (!drag.active) return;
   drag.active = false;
   if (drag.raf) { cancelAnimationFrame(drag.raf); drag.raf = 0; }
+  if (inputLocked) { springBack(); return; } // Auflösung läuft bereits (z. B. per Tastatur)
 
   const { dir, ratio } = candidateDir();
   const passed = ratio >= 1;
@@ -1916,9 +1925,7 @@ function finishDrag(e) {
     if (chk !== true) { toast(chk); springBack(); return; }
   }
 
-  inputLocked = true;
-  clearPreview();
-  flyOut(dir).then(() => card.onResolve(dir));
+  commitSwipe(card, dir);
 }
 
 function springBack() {
