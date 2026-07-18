@@ -517,7 +517,8 @@ function bindDom() {
     'dungeon-name', 'depth-val', 'depth-fill', 'torch-val', 'runbuff-list', 'retreat-btn',
     'intent-main', 'intent-desc', 'enemy-portrait', 'enemy-name', 'enemy-tag', 'enemy-hp-fill',
     'enemy-hp-ghost', 'enemy-hp-text', 'enemy-chips', 'combat-log', 'hint-bar',
-    'overlay-gameover', 'go-skull', 'go-title', 'go-reason', 'go-stats', 'restart-btn', 'fx-layer']
+    'overlay-gameover', 'go-skull', 'go-title', 'go-reason', 'go-stats', 'restart-btn', 'fx-layer',
+    'overlay-tutorial', 'tut-start-btn', 'help-btn']
     .forEach(id => { el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = $(id); });
 }
 
@@ -619,7 +620,7 @@ function renderLeft() {
         <button class="inv-btn" data-act="equip" data-idx="${i}" ${inCombat ? 'disabled' : ''} title="${inCombat ? 'Nicht im Kampf' : 'Ausrüsten (Getauschtes wandert ins Inventar)'}">⇄</button>
         <button class="inv-btn" data-act="sell" data-idx="${i}" title="Verkaufen (+${itemValue(it)} 🪙)">🪙</button>
       </div>`).join('')
-    : '<div class="inv-empty">Leer — Beute mit ▶ einstecken.</div>';
+    : '<div class="inv-empty">Leer — abgelegte Ausrüstung sammelt sich hier.</div>';
 
   el.potionList.innerHTML = `<div class="chip-row">${p.potions.map(pt =>
     pt ? `<span class="chip">${pt.emoji} ${pt.name}</span>` : `<span class="chip neutral">◌ leer</span>`).join('')}</div>`;
@@ -818,33 +819,11 @@ function dealCard(card) {
 }
 
 /* ============================================================
-   TUTORIAL — drei Karten vor der ersten Story-Karte, jederzeit überspringbar
+   TUTORIAL — Ein-Seiten-Overlay mit dem Spielprinzip (Start + ❔-Button)
    ============================================================ */
-const TUTORIAL_STEPS = [
-  { emoji: '🎓', title: 'Kammerherr Odo',
-    text: 'Willkommen auf dem Thron, Majestät. Ziehe die Karte nach links oder rechts (Maus oder Pfeiltasten) — jede Entscheidung bewegt die vier Balken oben. Und merke: Eine Reichs-Ressource tötet dich bei 0 UND bei 100.' },
-  { emoji: '🌀', title: 'Kammerherr Odo',
-    text: 'Bald öffnen sich Portale in die Dungeons. Dort frieren die Reichs-Ressourcen ein — nur deine ❤️ Lebenspunkte zählen. Fackeln 🔥 sind dein Licht: Ohne sie frisst die Dunkelheit deine HP. Beute bleibt dauerhaft dein.' },
-  { emoji: '⚔️', title: 'Kammerherr Odo',
-    text: 'Im Kampf verrät der Gegner seinen nächsten Zug — lies die Ankündigung! ◀ Blocken (perfekter Block kontert), ▶ Angreifen (Combo!), ▲ Waffen-Fähigkeit (kostet ⚡ Fokus), ▼ Trank. Kündigt er 🛡️ an, prallen Angriffe ab.' },
-];
-
-function makeTutorialCard(step) {
-  const t = TUTORIAL_STEPS[step];
-  const last = step === TUTORIAL_STEPS.length - 1;
-  return {
-    kind: 'tutorial',
-    emoji: t.emoji,
-    title: t.title,
-    text: t.text,
-    caption: `Einführung ${step + 1}/${TUTORIAL_STEPS.length}`,
-    labels: { left: 'Überspringen', right: last ? 'Verstanden — los!' : 'Weiter', up: '', down: '' },
-    onResolve(dir) {
-      if (dir === 'right' && !last) dealCard(makeTutorialCard(step + 1));
-      else dealCard(makeStoryCard(drawStoryDef('mutter')));
-    },
-  };
-}
+const tutorialOpen = () => !el.overlayTutorial.hidden;
+function showTutorial() { el.overlayTutorial.hidden = false; }
+function closeTutorial() { el.overlayTutorial.hidden = true; }
 
 /* ============================================================
    STORY-SYSTEM
@@ -1751,11 +1730,21 @@ function itemValue(item) {
 }
 
 const slotKeyFor = (cat) => cat === 'weapon' ? 'weapon' : cat === 'armor' ? 'armor' : 'trinket';
-const catOfDef = (def) => WEAPONS.includes(def) ? 'weapon' : ARMORS.includes(def) ? 'armor' : 'trinket';
 
-/** Beute wandert ins Inventar — nichts wird mehr ungefragt überschrieben oder verkauft. */
+/** Legt Beute unangetastet ins Inventar (z. B. Händler-Kauf). */
 function takeToInventory(item) {
   state.player.inventory.push(item);
+}
+
+/** Rüstet Beute direkt an; das bisher getragene Stück rutscht ins Inventar —
+    es wird nie verkauft oder verworfen, man kann jederzeit zurückwechseln. */
+function equipDirect(item) {
+  const p = state.player;
+  const slotKey = slotKeyFor(item.cat);
+  const old = p[slotKey];
+  p[slotKey] = item.def;
+  if (old) p.inventory.push({ cat: item.cat, def: old });
+  return old;
 }
 
 /** Tauscht Inventar-Slot gegen den Ausrüstungs-Slot (Getauschtes bleibt im Inventar). */
@@ -1811,11 +1800,16 @@ function makeLootCard(item, introText = null) {
     title: name,
     text: introText || `Beute: ${name} — ${detail}. ${isTorch || isPotion ? '' : `(${rarityName})`}`,
     caption: `Beute · Wert ${value} 🪙`,
-    labels: { left: `Verkaufen (+${value} 🪙)`, right: isTorch ? 'Einstecken' : (isPotion ? 'In den Beutel' : 'Ins Inventar'), up: '', down: '' },
+    labels: { left: `Verkaufen (+${value} 🪙)`, right: isTorch ? 'Einstecken' : (isPotion ? 'In den Beutel' : 'Ausrüsten'), up: '', down: '' },
     canSwipe(dir) {
       if (dir !== 'right') return true;
       if (isPotion && !state.player.potions.includes(null)) return 'Beutel voll — links verkaufen.';
-      if (!isPotion && !isTorch && state.player.inventory.length >= CONFIG.inventorySize) return 'Inventar voll — links verkaufen.';
+      if (!isPotion && !isTorch) {
+        // Beim Ausrüsten rutscht das getragene Stück ins Inventar — dafür braucht es dort Platz
+        const sk = slotKeyFor(item.cat);
+        if (state.player[sk] && state.player.inventory.length >= CONFIG.inventorySize)
+          return 'Inventar voll — erst Platz schaffen oder verkaufen.';
+      }
       return true;
     },
     onResolve(dir) {
@@ -1831,8 +1825,8 @@ function makeLootCard(item, introText = null) {
         takePotion(item.def);
         toast(`🧪 ${item.def.name} eingesteckt`);
       } else {
-        takeToInventory(item);
-        toast(`🎒 ${item.def.name} im Inventar — links per ⇄ ausrüsten`);
+        const old = equipDirect(item);
+        toast(old ? `✅ ${item.def.name} ausgerüstet · ${old.name} ➜ Inventar` : `✅ ${item.def.name} ausgerüstet`);
       }
       renderLeft(); renderDungeonPanel();
       r.queue.shift();
@@ -1866,7 +1860,7 @@ function restart() {
   el.combatLog.innerHTML = '';
   inputLocked = false;
   renderContext(); renderLeft();
-  dealCard(makeTutorialCard(0));
+  dealCard(makeStoryCard(drawStoryDef('mutter')));
 }
 
 /* ============================================================
@@ -1898,6 +1892,8 @@ function setupInput() {
 
   el.retreatBtn.addEventListener('click', retreat);
   el.restartBtn.addEventListener('click', restart);
+  el.tutStartBtn.addEventListener('click', closeTutorial);
+  el.helpBtn.addEventListener('click', showTutorial);
 
   // Inventar: Ausrüsten/Verkaufen per Button (Event-Delegation)
   el.invList.addEventListener('click', (e) => {
@@ -1911,6 +1907,10 @@ function setupInput() {
   // Tastatur: Pfeiltasten = Swipes, Enter/Leertaste = Neustart im Game Over
   document.addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    if (tutorialOpen()) { // Overlay hat Vorrang: schließen, Rest blockieren
+      if (['Enter', ' ', 'Escape'].includes(e.key)) { e.preventDefault(); closeTutorial(); }
+      return;
+    }
     const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
     if (map[e.key]) { e.preventDefault(); keySwipe(map[e.key]); }
     else if ((e.key === 'Enter' || e.key === ' ') && state.mode === 'GAME_OVER') restart();
@@ -2035,7 +2035,8 @@ function init() {
   initState();
   renderContext();
   renderLeft();
-  dealCard(makeTutorialCard(0));
+  dealCard(makeStoryCard(drawStoryDef('mutter')));
+  showTutorial();   // Ein-Seiten-Erklärung über der ersten Karte
 }
 
 document.addEventListener('DOMContentLoaded', init);
