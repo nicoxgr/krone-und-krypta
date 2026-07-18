@@ -669,7 +669,7 @@ function renderDungeonPanel() {
 
 const INTENT_TEXT = {
   attack:      (i) => [`⚔️ ${i.v}`, 'Angriff — Blocken verringert den Schaden.'],
-  block:       (i) => [`🛡️ ${i.v}`, 'Der Gegner verschanzt sich — freie Gelegenheit zum Aufbau!'],
+  block:       (i) => [`🛡️ ${i.v}`, 'Der Schild ist bereits oben — Angriffe werden abgeblockt!'],
   charge:      () => ['⚡ ×2', 'Lädt auf: Der nächste Schlag trifft doppelt so hart!'],
   poison:      (i) => [`☠️ ${i.v}`, 'Giftangriff — umgeht deinen Block!'],
   heal:        (i) => [`✨ +${i.v}`, 'Heilt sich — jetzt zuschlagen!'],
@@ -758,7 +758,7 @@ function renderHint() {
   const L = card.labels;
   let h = `◀ <b>${L.left}</b> · <b>${L.right}</b> ▶`;
   if (state.mode === 'COMBAT') h += ` · ▲ <b>${L.up}</b> · ▼ <b>${L.down}</b>`;
-  el.hintBar.innerHTML = h;
+  el.hintBar.innerHTML = h + ' · ⌨️ Pfeiltasten';
 }
 
 /* ============================================================
@@ -1280,7 +1280,7 @@ function startCombat(enemy, { elite = false, boss = false, affix = null, after =
     log: [],
   };
   state.mode = 'COMBAT';
-  state.combat.intent = nextIntent(enemy);
+  announceIntent();
   renderContext(); renderLeft();
   log(`⚔️ <span class="info">${enemy.def.name}</span> stellt sich dir entgegen${affix ? ` (<span class="crit">${affix.name}</span>)` : ''}!`);
   shake();
@@ -1453,15 +1453,23 @@ function nextIntent(en) {
   return def.pattern[en.pi++ % def.pattern.length];
 }
 
+/** Kündigt den nächsten Intent an. Ein angekündigter Schild geht SOFORT hoch
+    und blockt bereits die Spieler-Angriffe derselben Runde. */
+function announceIntent() {
+  const c = state.combat, en = c.enemy;
+  c.intent = nextIntent(en);
+  en.block = c.intent.t === 'block' ? c.intent.v : 0;
+}
+
 /** Führt den ANGEKÜNDIGTEN Intent des Gegners aus. */
 async function enemyTurn() {
   const c = state.combat, en = c.enemy, it = c.intent;
   if (hasStatus(en.statuses, 'stun')) {
     removeStatus(en.statuses, 'stun');
+    en.block = 0; // der Schild fällt mit der verlorenen Aktion
     log(`💫 ${en.def.name} ist betäubt und setzt aus!`);
     return;
   }
-  en.block = 0; // eigener Block verfällt zu Beginn des eigenen Zuges
 
   const attackLike = ['attack', 'bonestorm', 'eruption', 'breath'].includes(it.t);
   if (attackLike) {
@@ -1523,8 +1531,8 @@ async function enemyTurn() {
       log(`🧛 ${en.def.name} saugt <span class="heal">${heal} HP</span>.`);
     }
   } else if (it.t === 'block') {
-    en.block = it.v;
-    log(`🛡️ ${en.def.name} verschanzt sich (+${it.v} Block).`);
+    // Schild ging bereits bei der Ankündigung hoch — hier hält er ihn nur weiter
+    log(`🛡️ ${en.def.name} hält den Schild hoch${en.block > 0 ? ` (${en.block} Block übrig)` : ' — doch er ist zerborsten!'}.`);
   } else if (it.t === 'charge') {
     en.charged = true;
     log(`⚡ ${en.def.name} lädt einen mächtigen Schlag auf!`);
@@ -1621,7 +1629,7 @@ async function combatAction(dir) {
   if (en.hp <= 0) { await victory(); return; }
 
   c.round++;
-  c.intent = nextIntent(en);
+  announceIntent();
   renderCombatPanel(); renderPips();
   dealCard(makeCombatCard());
 }
@@ -1821,6 +1829,33 @@ function setupInput() {
 
   el.retreatBtn.addEventListener('click', retreat);
   el.restartBtn.addEventListener('click', restart);
+
+  // Tastatur: Pfeiltasten = Swipes, Enter/Leertaste = Neustart im Game Over
+  document.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+    if (map[e.key]) { e.preventDefault(); keySwipe(map[e.key]); }
+    else if ((e.key === 'Enter' || e.key === ' ') && state.mode === 'GAME_OVER') restart();
+  });
+}
+
+/** Löst einen Swipe per Tastatur aus — mit denselben Regeln wie per Maus. */
+function keySwipe(dir) {
+  if (inputLocked || state.mode === 'GAME_OVER' || !state.currentCard) return;
+  const combat = state.mode === 'COMBAT';
+  if ((dir === 'up' || dir === 'down') && !combat) return;
+  const card = state.currentCard;
+  if (card.canSwipe) {
+    const chk = card.canSwipe(dir);
+    if (chk !== true) { toast(chk); return; }
+  }
+  inputLocked = true;
+  clearPreview();
+  const ov = { left: el.ovLeft, right: el.ovRight, up: el.ovUp, down: el.ovDown }[dir];
+  ov.style.opacity = 1;
+  drag.dx = dir === 'left' ? -80 : dir === 'right' ? 80 : 0;
+  drag.dy = dir === 'up' ? -80 : dir === 'down' ? 80 : 0;
+  flyOut(dir).then(() => card.onResolve(dir));
 }
 
 function applyDrag() {
@@ -1934,6 +1969,10 @@ window.__kk = {
   day: (n) => { state.day = n; renderContext(); },
   draw: (id) => dealCard(makeStoryCard(drawStoryDef(id))),
   pool: () => storyPool().map(c => c.id),
+  equip: (id) => {
+    const item = WEAPONS.find(w => w.id === id) || ARMORS.find(a => a.id === id) || TRINKETS.find(t => t.id === id);
+    if (item) { state.player[WEAPONS.includes(item) ? 'weapon' : ARMORS.includes(item) ? 'armor' : 'trinket'] = item; renderLeft(); }
+  },
 };
 
 })();
