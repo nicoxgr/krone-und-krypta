@@ -54,6 +54,7 @@ const CONFIG = {
   bossReturnCap: 90,       // … gekappt, damit der Triumph nicht bei 100 tötet
   bossReturnHeal: 25,
 
+  inventorySize: 6,
   rarityValue: { common: 10, rare: 25, epic: 55, legendary: 110 },
   sellMul: 0.5,
   merchantMul: 1.6,
@@ -488,6 +489,7 @@ function initState() {
       armor: ARMORS[0],
       trinket: null,
       potions: [POTIONS[0], null, null],
+      inventory: [],   // nicht angelegte Ausrüstung: {cat, def}, max CONFIG.inventorySize
     },
     cleared: {},
     flags: {},           // gesetzte Story-Flags (Dialogpfad-Freischaltungen)
@@ -510,7 +512,7 @@ const el = {};
 function bindDom() {
   ['game', 'swipe-card', 'card-emoji', 'card-title', 'card-doors', 'door-left', 'door-right',
     'ov-left', 'ov-right', 'ov-up', 'ov-down', 'situation-text', 'card-caption', 'pips-row', 'toast',
-    'gold-val', 'equip-list', 'potion-list', 'stats-box', 'player-statuses', 'player-status-wrap',
+    'gold-val', 'equip-list', 'inv-list', 'potion-list', 'stats-box', 'player-statuses', 'player-status-wrap',
     'panel-story', 'panel-dungeon', 'panel-combat', 'day-val', 'chronicle', 'dungeon-status',
     'dungeon-name', 'depth-val', 'depth-fill', 'torch-val', 'runbuff-list', 'retreat-btn',
     'intent-main', 'intent-desc', 'enemy-portrait', 'enemy-name', 'enemy-tag', 'enemy-hp-fill',
@@ -606,6 +608,18 @@ function renderLeft() {
     </div></div>`
       : `<div class="slot empty"><span class="slot-ico">💍</span><div class="slot-body"><div class="slot-name">Kein Trinket</div></div></div>`}
   `;
+
+  $('inv-count').textContent = `(${p.inventory.length}/${CONFIG.inventorySize})`;
+  const inCombat = state.mode === 'COMBAT';
+  el.invList.innerHTML = p.inventory.length
+    ? p.inventory.map((it, i) => `
+      <div class="inv-row">
+        <span class="inv-ico">${it.def.emoji}</span>
+        <span class="inv-name ${rarityCls(it.def.rarity)}" title="${gearDetail(it)}">${it.def.name}</span>
+        <button class="inv-btn" data-act="equip" data-idx="${i}" ${inCombat ? 'disabled' : ''} title="${inCombat ? 'Nicht im Kampf' : 'Ausrüsten (Getauschtes wandert ins Inventar)'}">⇄</button>
+        <button class="inv-btn" data-act="sell" data-idx="${i}" title="Verkaufen (+${itemValue(it)} 🪙)">🪙</button>
+      </div>`).join('')
+    : '<div class="inv-empty">Leer — Beute mit ▶ einstecken.</div>';
 
   el.potionList.innerHTML = `<div class="chip-row">${p.potions.map(pt =>
     pt ? `<span class="chip">${pt.emoji} ${pt.name}</span>` : `<span class="chip neutral">◌ leer</span>`).join('')}</div>`;
@@ -801,6 +815,35 @@ function dealCard(card) {
   renderHint();
   renderPips();
   inputLocked = false;
+}
+
+/* ============================================================
+   TUTORIAL — drei Karten vor der ersten Story-Karte, jederzeit überspringbar
+   ============================================================ */
+const TUTORIAL_STEPS = [
+  { emoji: '🎓', title: 'Kammerherr Odo',
+    text: 'Willkommen auf dem Thron, Majestät. Ziehe die Karte nach links oder rechts (Maus oder Pfeiltasten) — jede Entscheidung bewegt die vier Balken oben. Und merke: Eine Reichs-Ressource tötet dich bei 0 UND bei 100.' },
+  { emoji: '🌀', title: 'Kammerherr Odo',
+    text: 'Bald öffnen sich Portale in die Dungeons. Dort frieren die Reichs-Ressourcen ein — nur deine ❤️ Lebenspunkte zählen. Fackeln 🔥 sind dein Licht: Ohne sie frisst die Dunkelheit deine HP. Beute bleibt dauerhaft dein.' },
+  { emoji: '⚔️', title: 'Kammerherr Odo',
+    text: 'Im Kampf verrät der Gegner seinen nächsten Zug — lies die Ankündigung! ◀ Blocken (perfekter Block kontert), ▶ Angreifen (Combo!), ▲ Waffen-Fähigkeit (kostet ⚡ Fokus), ▼ Trank. Kündigt er 🛡️ an, prallen Angriffe ab.' },
+];
+
+function makeTutorialCard(step) {
+  const t = TUTORIAL_STEPS[step];
+  const last = step === TUTORIAL_STEPS.length - 1;
+  return {
+    kind: 'tutorial',
+    emoji: t.emoji,
+    title: t.title,
+    text: t.text,
+    caption: `Einführung ${step + 1}/${TUTORIAL_STEPS.length}`,
+    labels: { left: 'Überspringen', right: last ? 'Verstanden — los!' : 'Weiter', up: '', down: '' },
+    onResolve(dir) {
+      if (dir === 'right' && !last) dealCard(makeTutorialCard(step + 1));
+      else dealCard(makeStoryCard(drawStoryDef('mutter')));
+    },
+  };
 }
 
 /* ============================================================
@@ -1176,6 +1219,7 @@ function makeMerchantCard(idx) {
       if (dir !== 'right') return true;
       if (state.player.gold < o.price) return 'Zu wenig Gold.';
       if (o.type === 'potion' && !state.player.potions.includes(null)) return 'Beutel voll.';
+      if (o.type === 'gear' && state.player.inventory.length >= CONFIG.inventorySize) return 'Inventar voll.';
       return true;
     },
     onResolve(dir) {
@@ -1183,7 +1227,7 @@ function makeMerchantCard(idx) {
         state.player.gold -= o.price;
         if (o.type === 'torch') { d.torches += o.n; toast(`🔥 +${o.n} Fackeln`); }
         else if (o.type === 'potion') { takePotion(o.item); toast(`🧪 ${o.item.name} eingesteckt`); }
-        else { equipGear(o.item); toast(`✅ ${o.item.def.name} ausgerüstet`); }
+        else { takeToInventory(o.item); toast(`🎒 ${o.item.def.name} im Inventar`); }
         renderLeft(); renderDungeonPanel();
       }
       if (idx < 2) dealCard(makeMerchantCard(idx + 1));
@@ -1706,16 +1750,39 @@ function itemValue(item) {
   return CONFIG.rarityValue[item.def.rarity];
 }
 
-function equipGear(item) {
+const slotKeyFor = (cat) => cat === 'weapon' ? 'weapon' : cat === 'armor' ? 'armor' : 'trinket';
+const catOfDef = (def) => WEAPONS.includes(def) ? 'weapon' : ARMORS.includes(def) ? 'armor' : 'trinket';
+
+/** Beute wandert ins Inventar — nichts wird mehr ungefragt überschrieben oder verkauft. */
+function takeToInventory(item) {
+  state.player.inventory.push(item);
+}
+
+/** Tauscht Inventar-Slot gegen den Ausrüstungs-Slot (Getauschtes bleibt im Inventar). */
+function equipFromInventory(idx) {
+  if (state.mode === 'COMBAT') { toast('Nicht mitten im Kampf!'); return; }
   const p = state.player;
-  const slotKey = item.cat === 'weapon' ? 'weapon' : item.cat === 'armor' ? 'armor' : 'trinket';
+  const item = p.inventory[idx];
+  if (!item) return;
+  const slotKey = slotKeyFor(item.cat);
   const old = p[slotKey];
-  if (old) {
-    const sell = Math.round(CONFIG.rarityValue[old.rarity] * CONFIG.sellMul);
-    p.gold += sell;
-    toast(`♻️ ${old.name} für ${sell} 🪙 verkauft`);
-  }
   p[slotKey] = item.def;
+  if (old) p.inventory[idx] = { cat: item.cat, def: old };
+  else p.inventory.splice(idx, 1);
+  toast(`✅ ${item.def.name} ausgerüstet`);
+  renderLeft();
+}
+
+function sellFromInventory(idx) {
+  const p = state.player;
+  const item = p.inventory[idx];
+  if (!item) return;
+  const value = itemValue(item);
+  p.gold += value;
+  state.stats.goldEarned += value;
+  p.inventory.splice(idx, 1);
+  toast(`🪙 ${item.def.name} für ${value} Gold verkauft`);
+  renderLeft();
 }
 function takePotion(potDef) {
   const idx = state.player.potions.indexOf(null);
@@ -1744,9 +1811,11 @@ function makeLootCard(item, introText = null) {
     title: name,
     text: introText || `Beute: ${name} — ${detail}. ${isTorch || isPotion ? '' : `(${rarityName})`}`,
     caption: `Beute · Wert ${value} 🪙`,
-    labels: { left: `Verkaufen (+${value} 🪙)`, right: isTorch ? 'Einstecken' : (isPotion ? 'In den Beutel' : 'Ausrüsten'), up: '', down: '' },
+    labels: { left: `Verkaufen (+${value} 🪙)`, right: isTorch ? 'Einstecken' : (isPotion ? 'In den Beutel' : 'Ins Inventar'), up: '', down: '' },
     canSwipe(dir) {
-      if (dir === 'right' && isPotion && !state.player.potions.includes(null)) return 'Beutel voll — links verkaufen.';
+      if (dir !== 'right') return true;
+      if (isPotion && !state.player.potions.includes(null)) return 'Beutel voll — links verkaufen.';
+      if (!isPotion && !isTorch && state.player.inventory.length >= CONFIG.inventorySize) return 'Inventar voll — links verkaufen.';
       return true;
     },
     onResolve(dir) {
@@ -1762,8 +1831,8 @@ function makeLootCard(item, introText = null) {
         takePotion(item.def);
         toast(`🧪 ${item.def.name} eingesteckt`);
       } else {
-        equipGear(item);
-        toast(`✅ ${item.def.name} ausgerüstet`);
+        takeToInventory(item);
+        toast(`🎒 ${item.def.name} im Inventar — links per ⇄ ausrüsten`);
       }
       renderLeft(); renderDungeonPanel();
       r.queue.shift();
@@ -1797,7 +1866,7 @@ function restart() {
   el.combatLog.innerHTML = '';
   inputLocked = false;
   renderContext(); renderLeft();
-  dealCard(makeStoryCard(drawStoryDef('mutter')));
+  dealCard(makeTutorialCard(0));
 }
 
 /* ============================================================
@@ -1829,6 +1898,15 @@ function setupInput() {
 
   el.retreatBtn.addEventListener('click', retreat);
   el.restartBtn.addEventListener('click', restart);
+
+  // Inventar: Ausrüsten/Verkaufen per Button (Event-Delegation)
+  el.invList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.inv-btn');
+    if (!btn || btn.disabled) return;
+    const idx = Number(btn.dataset.idx);
+    if (btn.dataset.act === 'equip') equipFromInventory(idx);
+    else sellFromInventory(idx);
+  });
 
   // Tastatur: Pfeiltasten = Swipes, Enter/Leertaste = Neustart im Game Over
   document.addEventListener('keydown', (e) => {
@@ -1957,7 +2035,7 @@ function init() {
   initState();
   renderContext();
   renderLeft();
-  dealCard(makeStoryCard(drawStoryDef('mutter')));
+  dealCard(makeTutorialCard(0));
 }
 
 document.addEventListener('DOMContentLoaded', init);
