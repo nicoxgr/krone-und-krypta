@@ -24,6 +24,11 @@ const CONFIG = {
   warnLow: 15,
   warnHigh: 85,
 
+  storyUpkeep: 1,          // Hofhaltung: Schatzkammer-Drain pro Tag
+  driftHigh: 70,           // ab hier verstärken sich Extreme selbst …
+  driftLow: 30,            // … bzw. fallen weiter ab
+  driftAmount: 1,
+
   torchStart: 12,
   darkDmg: 5,
   sneakCost: 2,
@@ -219,22 +224,22 @@ const STORY_DECK = [
   { id: 'sold', emoji: '💂', who: 'Hauptmann Aldric', text: 'Die Grenztruppen murren, mein Regent. Ein Sold-Bonus würde die Stimmung heben — und mein Ansehen bei den Männern.',
     left: { label: 'Sie dienen der Krone!', fx: { army: -8, faith: 4 } }, right: { label: 'Zahlt den Bonus', fx: { army: 10, treasury: -10 } } },
   { id: 'kathedrale', emoji: '👩‍🦳', who: 'Hohepriesterin Lyra', text: 'Der Orden verlangt eine Kathedrale aus Neonglas — ein Leuchtfeuer des Glaubens, sichtbar bis zu den Grenzbergen.',
-    left: { label: 'Zu teuer', fx: { faith: -10, treasury: 5 } }, right: { label: 'Baut sie', fx: { faith: 12, treasury: -12 } } },
+    left: { label: 'Zu teuer', fx: { faith: -10, treasury: 5 } }, right: { label: 'Baut sie', fx: { faith: 12, treasury: -12 }, set: ['kathedrale_gebaut'], follow: [['kathedrale2', 3, 5]] } },
   { id: 'steuern', emoji: '🎩', who: 'Schatzmeister Voss', text: '„Ich könnte die Bücher … kreativ führen. Niemand würde es merken. Fast niemand."',
-    left: { label: 'Bleib ehrlich', fx: { treasury: -6, faith: 6 } }, right: { label: 'Tu, was nötig ist', fx: { treasury: 12, faith: -8 } } },
+    left: { label: 'Bleib ehrlich', fx: { treasury: -6, faith: 6 } }, right: { label: 'Tu, was nötig ist', fx: { treasury: 12, faith: -8 }, set: ['voss_krumm'], follow: [['pruefer', 3, 6]] } },
   { id: 'fest', emoji: '🤡', who: 'Hofnarr Pip', text: '„Ein Fest, Majestät! Wer tanzt, vergisst den Hunger — und wer lacht, vergisst die Steuern!"',
-    left: { label: 'Keine Narreteien', fx: { faith: -5, treasury: 3 } }, right: { label: 'Lasst tanzen!', fx: { treasury: -8, faith: 8 } } },
+    left: { label: 'Keine Narreteien', fx: { faith: -5, treasury: 3 } }, right: { label: 'Lasst tanzen!', fx: { treasury: -8, faith: 8 }, follow: [['pip_theater', 2, 5]] } },
   { id: 'ernte', emoji: '👩‍🌾', who: 'Bäuerin Marla', text: 'Der Frost hat die halbe Ernte geholt. Ohne Korn aus den königlichen Speichern hungern drei Dörfer.',
-    left: { label: 'Abweisen', fx: { faith: -8, treasury: 4 } }, right: { label: 'Speicher öffnen', fx: { treasury: -8, faith: 8 } } },
+    left: { label: 'Abweisen', fx: { faith: -8, treasury: 4 }, follow: [['landflucht', 3, 6]] }, right: { label: 'Speicher öffnen', fx: { treasury: -8, faith: 8 }, follow: [['erntedank', 4, 8]] } },
   { id: 'tribut', emoji: '🤵', who: 'Gesandter von Vharan', text: '„Mein Fürst fordert Tribut. Zahlt — oder seine Banner stehen zur Schneeschmelze vor euren Toren."',
-    left: { label: 'Niemals!', fx: { army: -8, faith: 6 } }, right: { label: 'Zahlen', fx: { treasury: -10, army: 4 } } },
+    left: { label: 'Niemals!', fx: { army: -8, faith: 6 }, set: ['vharan_zorn'], follow: [['scharmuetzel', 2, 4]] }, right: { label: 'Zahlen', fx: { treasury: -10, army: 4 }, follow: [['vharan_mehr', 5, 9]] } },
   { id: 'schmiede', emoji: '🔨', who: 'Waffenschmiedin Kara', text: 'Der Stahl reicht nur für eines: neue Klingen für die Garde — oder Pflugscharen für das Volk.',
     left: { label: 'Pflugscharen', fx: { faith: 7, army: -6 } }, right: { label: 'Klingen', fx: { army: 9, treasury: -8 } } },
   { id: 'elixier', emoji: '🧪', who: 'Alchemist Fenn', text: '„Ein Elixier der Vitalität, Majestät. Frisch destilliert. Für Euch nur zwanzig Goldstücke — aus dem privaten Beutel, versteht sich."',
     left: { label: 'Ablehnen', fx: {} }, right: { label: 'Kaufen (−20 🪙)', fx: { gold: -20, hp: 15 } },
     canRight: (s) => s.player.gold >= 20 || 'Zu wenig Gold im Beutel.' },
   { id: 'spionin', emoji: '🕵️‍♀️', who: 'Spionin Nyx', text: '„Der Hauptmann trifft sich nachts mit Fremden, mein Regent. Soll ich … genauer hinsehen?"',
-    left: { label: 'Ich vertraue ihm', fx: { army: 5, faith: -5 } }, right: { label: 'Untersuchen', fx: { army: -7, faith: 6 } } },
+    left: { label: 'Ich vertraue ihm', fx: { army: 5, faith: -5 } }, right: { label: 'Untersuchen', fx: { army: -7, faith: 6 }, set: ['nyx_ermittelt'], follow: [['spionin2', 2, 4]] } },
   { id: 'sterne', emoji: '🔮', who: 'Sternendeuterin Ora', text: '„Die Sterne stehen schlecht, Majestät. Ein Schutzritual würde das Unheil abwenden — gegen eine kleine Spende."',
     left: { label: 'Aberglaube!', fx: { faith: -7, treasury: 3 } }, right: { label: 'Das Ritual zahlen', fx: { treasury: -6, faith: 7 } } },
   { id: 'taverne', emoji: '🍻', who: 'Wirt Bromm', text: '„Das ganze Viertel feiert Euren Namenstag, Majestät! Kommt herab — oder besteuert wenigstens das Bier."',
@@ -246,7 +251,7 @@ const STORY_DECK = [
   { id: 'moench', emoji: '🧎', who: 'Bettelmönch Ilo', text: '„Eine Münze für die Armen, Majestät. Der Himmel führt Buch — genauer als Euer Schatzmeister."',
     left: { label: 'Fortschicken', fx: { faith: -6, treasury: 3 } }, right: { label: 'Almosen geben', fx: { treasury: -5, faith: 7 } } },
   { id: 'golems', emoji: '⚙️', who: 'Erfinderin Vex', text: '„Dampfgolems für die Armee! Unermüdlich, furchtlos, gehorsam. Sie brauchen nur … ein beträchtliches Budget."',
-    left: { label: 'Zu riskant', fx: { army: -4, faith: 4 } }, right: { label: 'Bauen lassen', fx: { treasury: -12, army: 12 } } },
+    left: { label: 'Zu riskant', fx: { army: -4, faith: 4 } }, right: { label: 'Bauen lassen', fx: { treasury: -12, army: 12 }, set: ['golems_gebaut'], follow: [['golem_amok', 3, 6]] } },
   { id: 'seuche', emoji: '🤒', who: 'Stadtmedicus Halm', text: 'Ein Fieber kriecht durch die Gassen. Wir können die Viertel abriegeln — oder teure Heiler aus dem Süden rufen.',
     left: { label: 'Abriegeln', fx: { faith: -8, treasury: 4 } }, right: { label: 'Heiler rufen', fx: { treasury: -9, faith: 7, hp: 4 } } },
   { id: 'turnier', emoji: '🏇', who: 'Herold Jasper', text: 'Die Ritterschaft erwartet das Frühlingsturnier. Absagen spart Gold — und kostet Ehre.',
@@ -258,10 +263,165 @@ const STORY_DECK = [
   { id: 'reliquie', emoji: '📿', who: 'Reliquienhändler Zed', text: '„Der Fingerknochen des heiligen Ottmar! Garantiert echt. Zu neunzig Prozent. Für die Krone: ein Freundschaftspreis."',
     left: { label: 'Hinauswerfen', fx: { faith: 3 } }, right: { label: 'Für den Orden kaufen', fx: { treasury: -6, faith: 8 } } },
   { id: 'prediger', emoji: '🗣️', who: 'Wanderprediger Ansgar', text: 'Auf dem Marktplatz predigt ein Fremder: „Die Krone ist hohl! Nur der Orden ist ewig!" Die Menge lauscht.',
-    left: { label: 'Reden lassen', fx: { faith: 6, army: -5 } }, right: { label: 'Verhaften', fx: { army: 6, faith: -8 } } },
+    left: { label: 'Reden lassen', fx: { faith: 6, army: -5 }, set: ['ansgar_frei'], follow: [['sekte', 3, 6]] }, right: { label: 'Verhaften', fx: { army: 6, faith: -8 }, follow: [['maertyrer', 2, 4]] } },
   { id: 'triumph', emoji: '🎉', who: 'Das Reich', cond: (s) => s.cleared.neonhort,
     text: 'Drei Abgründe hast du geleert, drei Ungeheuer erschlagen. Auf den Straßen singen sie vom Drachentöter auf dem Thron.',
     left: { label: 'Bescheiden bleiben', fx: { faith: 8 } }, right: { label: 'Den Triumph feiern', fx: { treasury: -5, army: 8, faith: 5 } } },
+
+  /* ---- Folgekarten (chainOnly: erscheinen nur über follow-Einplanung) ---- */
+
+  /* Strang: Die Verschwörung um Hauptmann Aldric */
+  { id: 'spionin2', emoji: '🕵️‍♀️', who: 'Spionin Nyx', chainOnly: true, once: true,
+    text: 'Nyx legt Papiere auf den Thron. „Beweise. Der Hauptmann trifft Agenten aus Vharan — seit Monaten. Was befehlt Ihr?"',
+    left: { label: 'Beweise verbrennen', fx: { army: 6, faith: -6 }, set: ['aldric_geschont'] },
+    right: { label: 'Ihn konfrontieren', fx: {}, follow: [['aldric_konfront', 1, 2]] } },
+  { id: 'aldric_konfront', emoji: '💂', who: 'Hauptmann Aldric', chainOnly: true, once: true,
+    text: '„Ihr wisst es also." Aldric legt sein Schwert vor dir ab. „Ich wollte einen Krieg verhindern, den wir nicht gewinnen können. Richtet über mich."',
+    left: { label: 'Verbannung!', fx: { army: -12, faith: 6 }, set: ['aldric_weg'], follow: [['sella_garde', 2, 4]] },
+    right: { label: 'Beweise deine Treue', fx: { army: 10, treasury: -6 }, set: ['aldric_loyal'], follow: [['aldric_treue', 3, 6]] } },
+  { id: 'aldric_treue', emoji: '💂', who: 'Hauptmann Aldric', chainOnly: true, once: true,
+    text: 'Aldric kniet nieder und übergibt dir das Banner seiner Familie — dreihundert Jahre alt. „Mein Leben gehört der Krone. Diesmal wirklich."',
+    left: { label: 'Das Banner ehren', fx: { army: 9, faith: 4 } },
+    right: { label: 'Es verkaufen', fx: { treasury: 9, army: -5 } } },
+  { id: 'sella_garde', emoji: '🗺️', who: 'Kriegsrätin Sella', chainOnly: true, once: true,
+    text: 'Sella übernimmt die verwaiste Garde. „Die Männer murren wegen Aldric. Ich kann sie mit Härte führen — oder mit Sold."',
+    left: { label: 'Mit Härte', fx: { army: 7, faith: -6 } },
+    right: { label: 'Mit Sold', fx: { army: 8, treasury: -9 } } },
+
+  /* Strang: Die Neonglas-Kathedrale */
+  { id: 'kathedrale2', emoji: '👩‍🦳', who: 'Hohepriesterin Lyra', chainOnly: true, once: true,
+    text: 'Die Neonglas-Kathedrale ist vollendet — sie summt leise im Abendlicht. Lyra fragt: „Wie feiern wir die Einweihung, Majestät?"',
+    left: { label: 'In stiller Andacht', fx: { faith: 6 }, follow: [['neonwunder', 4, 7]] },
+    right: { label: 'Mit großem Pomp', fx: { faith: 10, treasury: -8 }, follow: [['neonwunder', 4, 7]] } },
+  { id: 'neonwunder', emoji: '✨', who: 'Das singende Glas', chainOnly: true, once: true,
+    text: 'Bei Sonnenaufgang beginnt das Neonglas zu singen. Pilger strömen zu Tausenden in die Stadt — sie nennen es ein Wunder.',
+    left: { label: 'Pilgerzoll erheben', fx: { treasury: 11, faith: -7 } },
+    right: { label: 'Freier Zugang für alle', fx: { faith: 10, treasury: -5 } } },
+
+  /* Strang: Voss und der Rechnungsprüfer */
+  { id: 'pruefer', emoji: '🧐', who: 'Königlicher Rechnungsprüfer', chainOnly: true, once: true,
+    text: '„Interessante Bücher, Majestät. Sehr … kreativ. Es wäre bedauerlich, wenn der Hohe Rat davon erführe."',
+    left: { label: 'Voss opfern', fx: { faith: 8, treasury: -7 }, set: ['voss_weg'] },
+    right: { label: 'Ihn bestechen', fx: { treasury: -12 }, follow: [['pruefer2', 4, 8]] } },
+  { id: 'pruefer2', emoji: '🧐', who: 'Königlicher Rechnungsprüfer', chainOnly: true, once: true,
+    text: 'Der Prüfer ist zurück, sein Lächeln breiter als zuvor. „Die Preise für mein Schweigen sind gestiegen. Die Zeiten, Ihr versteht."',
+    left: { label: 'Zähneknirschend zahlen', fx: { treasury: -14 } },
+    right: { label: 'Verhaften lassen', fx: { army: 5, faith: -8 } } },
+
+  /* Strang: Pips Theater */
+  { id: 'pip_theater', emoji: '🤡', who: 'Hofnarr Pip', chainOnly: true, once: true,
+    text: '„Majestät! Das Fest war grandios — aber flüchtig. Ein Theater! Ein Haus des ewigen Gelächters! Kostet nur ein klitzekleines Vermögen."',
+    left: { label: 'Keine Zeit für Träume', fx: { faith: -5 } },
+    right: { label: 'Bau dein Theater', fx: { treasury: -10, faith: 8 }, follow: [['premiere', 3, 6]] } },
+  { id: 'premiere', emoji: '🎭', who: 'Die Premiere', chainOnly: true, once: true,
+    text: 'Pips erstes Stück verspottet — den Orden. Das Volk johlt vor Lachen, Lyra sitzt versteinert in der ersten Reihe.',
+    left: { label: 'Das Stück verbieten', fx: { faith: 7, treasury: -4 } },
+    right: { label: 'Lauthals mitlachen', fx: { faith: -9, hp: 6 } } },
+
+  /* Strang: Vex und der Amok-Golem */
+  { id: 'golem_amok', emoji: '🦾', who: 'Alarm im Hafenviertel', chainOnly: true, once: true,
+    text: 'Ein Dampfgolem läuft Amok! Vex schreit über den Lärm: „Ein Kalibrierungsfehler! Haltet ihn auf — aber zerstört ihn nicht!"',
+    left: { label: 'Die Garde opfert sich', fx: { army: -10, faith: 4 }, follow: [['vex_reue', 2, 4]] },
+    right: { label: 'Selbst eingreifen', fx: { hp: -14, army: 8 }, follow: [['vex_reue', 2, 4]] } },
+  { id: 'vex_reue', emoji: '⚙️', who: 'Erfinderin Vex', chainOnly: true, once: true,
+    text: 'Vex steht vor dir, ölverschmiert und kleinlaut. „Ich kann sie sicherer machen. Oder wir schmelzen alles ein. Eure Entscheidung."',
+    left: { label: 'Alles einschmelzen', fx: { army: -8, treasury: 7 } },
+    right: { label: 'Weiterforschen', fx: { army: 10, treasury: -8 } } },
+
+  /* Strang: Der Konflikt mit Vharan */
+  { id: 'scharmuetzel', emoji: '🏴', who: 'Bote von der Grenze', chainOnly: true, once: true,
+    text: 'Vharans Reiter brennen Grenzdörfer nieder. Die Bauern fliehen in die Städte, die Garde erwartet deine Befehle.',
+    left: { label: 'Truppen entsenden', fx: { army: -8, treasury: -6 }, follow: [['vharan_sieg', 4, 7]] },
+    right: { label: 'Diplomaten schicken', fx: { treasury: -10, faith: 4 } } },
+  { id: 'vharan_sieg', emoji: '🎺', who: 'Bote von der Grenze', chainOnly: true, once: true,
+    text: 'Sieg! Deine Garde hat Vharans Reiter über den Fluss getrieben. In den Grenzdörfern rufen sie deinen Namen.',
+    left: { label: 'Die Garde belohnen', fx: { army: 11, treasury: -7 } },
+    right: { label: 'Frieden anbieten', fx: { faith: 8, army: 4 } } },
+  { id: 'vharan_mehr', emoji: '🤵', who: 'Gesandter von Vharan', chainOnly: true, once: true,
+    text: '„Mein Fürst dankt für den Tribut — und verdoppelt seine Forderung. Gehorsam macht Appetit, Majestät."',
+    left: { label: 'Jetzt reicht es!', fx: { army: 4, faith: 4 }, set: ['vharan_zorn'], follow: [['scharmuetzel', 2, 4]] },
+    right: { label: 'Erneut zahlen', fx: { treasury: -14, army: -4 } } },
+
+  /* Strang: Ansgars Bewegung */
+  { id: 'sekte', emoji: '🕯️', who: 'Ansgars Anhänger', chainOnly: true, once: true,
+    text: 'Ansgars Anhänger tragen jetzt Roben und singen vor den Toren. Aus dem Prediger ist eine Bewegung geworden.',
+    left: { label: 'Die Bewegung verbieten', fx: { faith: -9, army: 5 } },
+    right: { label: 'In den Orden eingliedern', fx: { faith: 12, treasury: -5 } } },
+  { id: 'maertyrer', emoji: '⛓️', who: 'Stimmen aus dem Volk', chainOnly: true, once: true,
+    text: 'Im Kerker schweigt Ansgar — und wird dadurch nur lauter. Auf den Märkten nennt man ihn bereits einen Märtyrer.',
+    left: { label: 'Freilassen', fx: { faith: 7, army: -6 } },
+    right: { label: 'Im Kerker lassen', fx: { faith: -9, army: 6 } } },
+
+  /* Strang: Marlas Dörfer */
+  { id: 'erntedank', emoji: '🍞', who: 'Bäuerin Marla', chainOnly: true, once: true,
+    text: 'Marla bringt den ersten Laib der neuen Ernte — noch warm. Drei Dörfer haben deinen Namen in die Felder gepflügt.',
+    left: { label: 'Bescheiden danken', fx: { faith: 8 } },
+    right: { label: 'Ein Erntefest stiften', fx: { faith: 10, treasury: -6 } } },
+  { id: 'landflucht', emoji: '🏚️', who: 'Verlassene Dörfer', chainOnly: true, once: true,
+    text: 'Die Dörfer, denen du das Korn verweigert hast, stehen leer. Die Felder liegen brach, die Steuern bleiben aus.',
+    left: { label: 'Neue Siedler anwerben', fx: { treasury: -9, faith: 4 } },
+    right: { label: 'Land der Krone einverleiben', fx: { treasury: 6, faith: -8 } } },
+
+  /* Strang: Ilvas Expedition */
+  { id: 'ilva2', emoji: '🗺️', who: 'Kartografin Ilva', chainOnly: true, once: true,
+    text: 'Ilva kehrt zurück — mit Karten, Erzproben und Geschichten von Höhlen, die im Dunkeln singen.',
+    left: { label: 'Das Erz schürfen', fx: { treasury: 12, faith: -5 } },
+    right: { label: 'Die Täler schonen', fx: { faith: 8 } } },
+
+  /* ---- Eskalationskarten (erscheinen nur bei gefährlichen Werten) ---- */
+  { id: 'edge_armee_hoch', emoji: '⚔️', who: 'Generalin Kessra', w: 3, cond: (s) => s.res.army >= 75,
+    text: 'Kessra breitet Karten auf dem Thron aus. „Die Armee ist stark wie nie. Gebt den Befehl, und ich schenke Euch Vharan bis zum Winter."',
+    left: { label: 'Es gibt keinen Krieg', fx: { army: -10, faith: 5 } },
+    right: { label: 'Zieht ins Feld!', fx: { army: 9, treasury: -11 } } },
+  { id: 'edge_armee_tief', emoji: '🏃', who: 'Hauptmann der Nachtwache', w: 3, cond: (s) => s.res.army <= 25,
+    text: 'Heute Nacht sind wieder zwölf Mann desertiert. Die Kasernen leeren sich — und die Straßen werden unsicher.',
+    left: { label: 'Deserteure jagen', fx: { army: 8, faith: -7 } },
+    right: { label: 'Laufen lassen', fx: { army: -7, treasury: 4 } } },
+  { id: 'edge_orden_hoch', emoji: '⛪', who: 'Hohepriesterin Lyra', w: 3, cond: (s) => s.res.faith >= 75,
+    text: '„Der Orden trägt dieses Reich, Majestät. Es ist Zeit, dass er auch mitregiert: ein Sitz im Thronrat. Als Zeichen des Vertrauens."',
+    left: { label: 'Der Thron bleibt weltlich', fx: { faith: -10, army: 5 } },
+    right: { label: 'Gewährt', fx: { faith: 9, treasury: -6 } } },
+  { id: 'edge_orden_tief', emoji: '🔥', who: 'Flüsternde Gassen', w: 3, cond: (s) => s.res.faith <= 25,
+    text: 'In den Tavernen erzählt man sich, die Krone habe die Götter verhöhnt — und die Götter würden bald zurückschlagen.',
+    left: { label: 'Öffentliche Buße', fx: { faith: 9, treasury: -7 } },
+    right: { label: 'Gerüchte verbieten', fx: { faith: -6, army: 5 } } },
+  { id: 'edge_schatz_hoch', emoji: '🗝️', who: 'Gilde der Schattenhand', w: 3, cond: (s) => s.res.treasury >= 75,
+    text: 'Ein Brief ohne Absender: „Eure Schatzkammer ist beeindruckend. Wir hätten sie gerne. Man kann sich einigen — oder auch nicht."',
+    left: { label: 'Wachen verdoppeln', fx: { treasury: -8, army: 6 } },
+    right: { label: 'Ignorieren', fx: { treasury: -12, hp: -4 } } },
+  { id: 'edge_schatz_tief', emoji: '🪙', who: 'Söldnerführer Dregg', w: 3, cond: (s) => s.res.treasury <= 25,
+    text: '„Sold, Majestät. Meine Klingen kämpfen für Gold, nicht für Ehre. Heute noch — oder wir suchen uns einen zahlungskräftigeren Thron."',
+    left: { label: 'Vertrösten', fx: { army: -9, faith: -4 } },
+    right: { label: 'Kronjuwelen verpfänden', fx: { treasury: 10, faith: -7 } } },
+  { id: 'edge_hp_tief', emoji: '🩺', who: 'Stadtmedicus Halm', w: 3, cond: (s) => s.res.hp <= 30,
+    text: 'Halm misst deinen Puls und runzelt die Stirn. „Majestät, Euer Körper ist ein belagertes Schloss. Ruhe — oder Ihr regiert bald vom Grab aus."',
+    left: { label: 'Durchregieren', fx: { hp: -6, army: 4 } },
+    right: { label: 'Eine Woche Kur', fx: { hp: 15, treasury: -8, army: -4 } } },
+
+  /* ---- Weitere Charaktere & Alltag am Hof ---- */
+  { id: 'kessra', emoji: '⚔️', who: 'Generalin Kessra', text: '„Die Truppen rosten ein, Majestät. Ein großes Manöver würde sie schärfen — und den Nachbarn zeigen, dass wir wach sind."',
+    left: { label: 'Zu teuer', fx: { army: -6, treasury: 4 } }, right: { label: 'Abhalten lassen', fx: { army: 8, treasury: -7 } } },
+  { id: 'ilva', emoji: '🗺️', who: 'Kartografin Ilva', text: '„Hinter den Grenzbergen liegen unkartierte Täler. Finanziert meine Expedition — was ich finde, gehört der Krone."',
+    left: { label: 'Träumerei', fx: { faith: -4, treasury: 3 } }, right: { label: 'Finanzieren', fx: { treasury: -9, faith: 6 }, follow: [['ilva2', 5, 9]] } },
+  { id: 'brauer', emoji: '🍺', who: 'Braumeister Humbold', text: '„Gebt mir das Bier-Monopol der Hauptstadt, und die Krone trinkt mit — fünf Prozent an jedem Fass."',
+    left: { label: 'Freier Markt', fx: { faith: 5, treasury: -4 } }, right: { label: 'Monopol gewähren', fx: { treasury: 9, faith: -6 } } },
+  { id: 'nachtwache', emoji: '🌃', who: 'Die Nachtwache', text: 'Die Wachen schwören, auf der Stadtmauer gehe nachts ein Schemen um — er trage eine Krone und weine.',
+    left: { label: 'Unsinn — Doppelschichten!', fx: { army: 5, faith: -5 } }, right: { label: 'Einen Priester schicken', fx: { faith: 6, treasury: -4 } } },
+  { id: 'astronom', emoji: '🔭', who: 'Astronom Fedik', text: '„Die Sternendeuterin ist eine Scharlatanin! Gebt mir ihr Observatorium, und ich gebe Euch echte Wissenschaft."',
+    left: { label: 'Ora vertrauen', fx: { faith: 6, treasury: -3 } }, right: { label: 'Fedik übernimmt', fx: { faith: -7, treasury: 6 } } },
+  { id: 'waise', emoji: '🧒', who: 'Ein Kind am Tor', text: 'Ein Waisenkind hat sich an allen Wachen vorbei bis vor den Thron geschlichen. Es will nur eines: einmal die Krone berühren.',
+    left: { label: 'Wache!', fx: { faith: -6, army: 3 } }, right: { label: 'Es gewähren', fx: { faith: 7, hp: 4 } } },
+  { id: 'arena', emoji: '🏟️', who: 'Gladiatorenmeister Rukk', text: '„Eine Arena, Majestät! Brot und Spiele! Das Volk vergisst jede Steuer, wenn Blut auf Sand tropft."',
+    left: { label: 'Barbarei!', fx: { faith: 6, army: -4 } }, right: { label: 'Bauen lassen', fx: { army: 7, faith: -8, treasury: -5 } } },
+  { id: 'fischersfrau', emoji: '🎣', who: 'Fischersfrau Edda', text: '„Im Nebel vorm Kap — ein Schatten, groß wie drei Schiffe. Die Fischer weigern sich auszulaufen, und die Stadt braucht Fisch."',
+    left: { label: 'Fanggründe verlegen', fx: { treasury: -6, faith: 4 } }, right: { label: 'Die Garde aufs Meer!', fx: { army: -7, treasury: 7 } } },
+  { id: 'mutter2', emoji: '👵', who: 'Die alte Königin', cond: (s) => s.day >= 10,
+    text: 'Deine Mutter betrachtet dein müdes Gesicht. „Du regierst wie dein Vater — zu viel Kopf, zu wenig Schlaf. Das Reich braucht dich lebendig."',
+    left: { label: 'Die Arbeit wartet', fx: { hp: -4, treasury: 4 } }, right: { label: 'Einen Tag ruhen', fx: { hp: 8, army: -3 } } },
+  { id: 'diebin', emoji: '🦝', who: 'Gefasste Diebin', text: 'Die Wachen bringen eine Diebin vor den Thron — sie stahl Brot für ihre Geschwister. Das Gesetz verlangt die Hand, das Volk schaut zu.',
+    left: { label: 'Das Gesetz ist das Gesetz', fx: { army: 5, faith: -8 } }, right: { label: 'Begnadigen', fx: { faith: 8, army: -5 } } },
+  { id: 'giftprobe', emoji: '🍷', who: 'Mundschenk Talin', text: 'Talin zögert beim Vorkosten des Weins — eine Sekunde zu lang. Dann trinkt er. Nichts passiert. Diesmal.',
+    left: { label: 'Alle Küchen durchsuchen', fx: { army: 4, treasury: -6 } }, right: { label: 'Talin belohnen', fx: { treasury: -4, faith: 5, hp: 3 } } },
 
   /* Portale — Übergang in den Dungeon-Modus */
   { id: 'portal_katakomben', emoji: '🌀', who: 'Riss im Fundament', portal: 'katakomben', w: 4,
@@ -330,6 +490,9 @@ function initState() {
       potions: [POTIONS[0], null, null],
     },
     cleared: {},
+    flags: {},           // gesetzte Story-Flags (Dialogpfad-Freischaltungen)
+    pending: [],         // eingeplante Folgekarten: {id, day}
+    seen: {},            // bereits gespielte once-Karten
     lastStoryId: null,
     chronicle: [],
     dungeon: null,
@@ -643,13 +806,46 @@ function dealCard(card) {
 /* ============================================================
    STORY-SYSTEM
    ============================================================ */
+const storyDefById = (id) => STORY_DECK.find(c => c.id === id);
+
+/** Zufalls-Pool: ohne Ketten-Karten, ohne gespielte once-Karten, ohne bereits eingeplante Karten. */
+function storyPool() {
+  const pendingIds = new Set(state.pending.map(p => p.id));
+  return STORY_DECK.filter(c =>
+    !c.chainOnly &&
+    c.id !== state.lastStoryId &&
+    !(c.once && state.seen[c.id]) &&
+    !pendingIds.has(c.id) &&
+    (!c.cond || c.cond(state)));
+}
+
 function drawStoryDef(forceId = null) {
-  if (forceId) return STORY_DECK.find(c => c.id === forceId);
-  const pool = STORY_DECK.filter(c =>
-    c.id !== state.lastStoryId && (!c.cond || c.cond(state)));
+  if (forceId) return storyDefById(forceId);
+  // Fällige Folgekarten haben Vorrang vor dem Zufalls-Deck
+  while (state.pending.length) {
+    const dueIdx = state.pending.findIndex(p => state.day >= p.day);
+    if (dueIdx < 0) break;
+    const [p] = state.pending.splice(dueIdx, 1);
+    const def = storyDefById(p.id);
+    if (def && !(def.once && state.seen[def.id])) return def;
+  }
+  const pool = storyPool();
   const weights = {};
   pool.forEach((c, i) => { weights[i] = c.w || 1; });
   return pool[Number(pickWeighted(weights))];
+}
+
+/** Tägliche Dynamik: Hofhaltung kostet, Extreme verstärken sich selbst (Todesspirale). */
+function dailyDriftFx() {
+  const fx = { treasury: -CONFIG.storyUpkeep };
+  for (const k of ['army', 'faith', 'treasury']) {
+    const v = state.res[k];
+    let d = fx[k] || 0;
+    if (v >= CONFIG.driftHigh) d += CONFIG.driftAmount;
+    else if (v <= CONFIG.driftLow) d -= CONFIG.driftAmount;
+    if (d) fx[k] = d; else delete fx[k];
+  }
+  return fx;
 }
 
 function makeStoryCard(def) {
@@ -673,8 +869,13 @@ function makeStoryCard(def) {
       const side = dir === 'left' ? def.left : def.right;
       state.day++;
       state.chronicle.push({ day: state.day - 1, text: `${def.who}: <b>${side.label}</b>` });
+      if (def.once) state.seen[def.id] = true;
+      if (side.set) side.set.forEach(f => { state.flags[f] = true; });
+      if (side.follow) side.follow.forEach(([fid, min, max]) =>
+        state.pending.push({ id: fid, day: state.day + rndInt(min, max) }));
       if (side.enter) { enterDungeon(side.enter); return; }
-      const death = applyStoryFx(side.fx || {});
+      let death = applyStoryFx(side.fx || {});
+      if (!death) death = applyStoryFx(dailyDriftFx());
       renderContext();
       if (death) { gameOver(death); return; }
       dealCard(makeStoryCard(drawStoryDef()));
@@ -1729,6 +1930,10 @@ window.__kk = {
   die: (key) => gameOver(DEATHS[key]),
   win: () => { if (state.combat) { state.combat.enemy.hp = 0; victory(); } },
   next: () => dungeonContinue(),
+  res: (k, v) => { state.res[k] = clamp(v, 0, 100); renderResources(); },
+  day: (n) => { state.day = n; renderContext(); },
+  draw: (id) => dealCard(makeStoryCard(drawStoryDef(id))),
+  pool: () => storyPool().map(c => c.id),
 };
 
 })();
