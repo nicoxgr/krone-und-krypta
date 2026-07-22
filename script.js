@@ -473,6 +473,130 @@ function pickWeighted(map) {
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 /* ============================================================
+   AUDIO — reine Web-Audio-Synthese, keine Sample-Dateien.
+   SFX + subtiler Ambient-Pad je Modus. Ein Master-Mute (in localStorage).
+   ============================================================ */
+const Sound = (() => {
+  let ctx = null, master = null, sfxGain = null, musicGain = null;
+  let enabled = true, desiredMode = null, pad = null, padMode = null;
+
+  function ensure() {
+    if (ctx) return;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain(); master.gain.value = 0.85; master.connect(ctx.destination);
+      sfxGain = ctx.createGain(); sfxGain.gain.value = 1; sfxGain.connect(master);
+      musicGain = ctx.createGain(); musicGain.gain.value = 1; musicGain.connect(master);
+    } catch (e) { ctx = null; }
+  }
+  function running() { return ctx && ctx.state === 'running'; }
+
+  /** Ton mit weicher Hüllkurve (kein Klicken); optionaler Frequenz-Slide. */
+  function tone({ freq = 440, type = 'sine', dur = 0.15, gain = 0.2, attack = 0.006, slideTo = null, when = 0 }) {
+    if (!ctx) return;
+    const t = ctx.currentTime + when;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(freq, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g); g.connect(sfxGain);
+    osc.start(t); osc.stop(t + dur + 0.03);
+  }
+  /** Abklingender Rausch-Impuls (Treffer, Clang). */
+  function noise({ dur = 0.15, gain = 0.2, type = 'highpass', freq = 1000, when = 0 }) {
+    if (!ctx) return;
+    const t = ctx.currentTime + when;
+    const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const filt = ctx.createBiquadFilter(); filt.type = type; filt.frequency.value = freq;
+    const g = ctx.createGain(); g.gain.value = gain;
+    src.connect(filt); filt.connect(g); g.connect(sfxGain);
+    src.start(t);
+  }
+
+  const SFX = {
+    swipe:   () => noise({ dur: 0.12, gain: 0.10, type: 'highpass', freq: 1400 }),
+    attack:  () => { noise({ dur: 0.11, gain: 0.16, type: 'bandpass', freq: 2200 }); tone({ freq: 320, type: 'sawtooth', dur: 0.1, gain: 0.07, slideTo: 170 }); },
+    crit:    () => { noise({ dur: 0.16, gain: 0.2, type: 'bandpass', freq: 3200 }); tone({ freq: 880, type: 'square', dur: 0.16, gain: 0.09, slideTo: 1500 }); },
+    block:   () => { noise({ dur: 0.16, gain: 0.18, type: 'highpass', freq: 2600 }); tone({ freq: 190, type: 'triangle', dur: 0.12, gain: 0.08 }); },
+    hurt:    () => { tone({ freq: 220, type: 'sawtooth', dur: 0.18, gain: 0.16, slideTo: 85 }); noise({ dur: 0.1, gain: 0.09, type: 'lowpass', freq: 700 }); },
+    special: () => { tone({ freq: 600, type: 'triangle', dur: 0.26, gain: 0.11, slideTo: 1250 }); tone({ freq: 900, type: 'sine', dur: 0.26, gain: 0.07, slideTo: 1550, when: 0.04 }); },
+    potion:  () => tone({ freq: 400, type: 'sine', dur: 0.3, gain: 0.1, slideTo: 950 }),
+    heal:    () => { tone({ freq: 523, type: 'sine', dur: 0.22, gain: 0.09, slideTo: 784 }); tone({ freq: 784, type: 'sine', dur: 0.22, gain: 0.07, slideTo: 1046, when: 0.09 }); },
+    poison:  () => tone({ freq: 300, type: 'sine', dur: 0.14, gain: 0.07, slideTo: 190 }),
+    coin:    () => { tone({ freq: 1250, type: 'square', dur: 0.06, gain: 0.07 }); tone({ freq: 1720, type: 'square', dur: 0.08, gain: 0.06, when: 0.06 }); },
+    click:   () => tone({ freq: 460, type: 'square', dur: 0.05, gain: 0.05 }),
+    door:    () => { noise({ dur: 0.26, gain: 0.13, type: 'lowpass', freq: 420 }); tone({ freq: 120, type: 'sine', dur: 0.2, gain: 0.07 }); },
+    portal:  () => { tone({ freq: 180, type: 'sine', dur: 0.6, gain: 0.09, slideTo: 820 }); tone({ freq: 240, type: 'triangle', dur: 0.6, gain: 0.06, slideTo: 1100, when: 0.05 }); },
+    enemyDie:() => { tone({ freq: 300, type: 'sawtooth', dur: 0.4, gain: 0.13, slideTo: 70 }); noise({ dur: 0.3, gain: 0.09, type: 'lowpass', freq: 500 }); },
+    victory: () => [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.32, gain: 0.11, when: i * 0.12 })),
+    boss:    () => { [110, 110, 146].forEach((f, i) => tone({ freq: f, type: 'sawtooth', dur: 0.5, gain: 0.15, when: i * 0.18 })); noise({ dur: 0.6, gain: 0.11, type: 'lowpass', freq: 320 }); },
+    gameover:() => [392, 330, 262, 196].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.55, gain: 0.13, when: i * 0.24 })),
+  };
+
+  function buildPad(mode) {
+    stopPad();
+    if (!ctx || !enabled) return;
+    const roots = { STORY: 130.81, DUNGEON: 98.0, COMBAT: 82.41, REWARD: 146.83, GAME_OVER: 65.41 };
+    const root = roots[mode] || 110;
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = mode === 'COMBAT' ? 900 : 620; filt.Q.value = 0.5;
+    filt.connect(musicGain);
+    const g = ctx.createGain(); g.gain.value = 0.0001; g.connect(filt);
+    g.gain.setTargetAtTime(mode === 'COMBAT' ? 0.05 : 0.036, ctx.currentTime, 0.9);
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
+    const lg = ctx.createGain(); lg.gain.value = 0.014; lfo.connect(lg); lg.connect(g.gain); lfo.start();
+    const nodes = [lfo];
+    const intervals = mode === 'COMBAT' ? [1, 1.5, 2] : [1, 1.5, 2, 3];
+    intervals.forEach((mul, i) => {
+      const o = ctx.createOscillator();
+      o.type = i === 0 ? 'triangle' : 'sine';
+      o.frequency.value = root * mul * (1 + (i - 1) * 0.002);
+      o.connect(g); o.start(); nodes.push(o);
+    });
+    pad = { nodes, gain: g }; padMode = mode;
+  }
+  function stopPad() {
+    if (!pad) return;
+    try {
+      pad.gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.4);
+      pad.nodes.forEach(n => { try { n.stop(ctx.currentTime + 1.2); } catch (e) {} });
+    } catch (e) {}
+    pad = null; padMode = null;
+  }
+  function syncPad() {
+    if (!ctx) return;
+    if (!enabled) { stopPad(); return; }
+    if (desiredMode && padMode !== desiredMode) buildPad(desiredMode);
+  }
+
+  function resume() { ensure(); if (!ctx) return; if (ctx.state === 'suspended') ctx.resume(); syncPad(); }
+  function setMode(mode) { desiredMode = mode; if (running()) syncPad(); }
+  function play(name) {
+    if (!enabled) return;
+    ensure(); if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    syncPad();
+    const fn = SFX[name];
+    if (fn) { try { fn(); } catch (e) {} }
+  }
+  function setEnabled(on) {
+    enabled = on;
+    try { localStorage.setItem('kk-sound', on ? '1' : '0'); } catch (e) {}
+    if (!on) stopPad(); else { ensure(); if (ctx && ctx.state === 'suspended') ctx.resume(); syncPad(); }
+  }
+  function load() { try { enabled = localStorage.getItem('kk-sound') !== '0'; } catch (e) {} return enabled; }
+
+  return { play, setMode, setEnabled, isEnabled: () => enabled, load, resume };
+})();
+
+/* ============================================================
    STATE
    ============================================================ */
 let state = null;
@@ -502,6 +626,7 @@ function initState() {
     reward: null,
     stats: { slain: 0, goldEarned: 0, dungeons: 0 },
     currentCard: null,
+    view: null,          // serialisierbarer Deskriptor der aktuell gezeigten Karte (für Speichern)
   };
 }
 
@@ -518,7 +643,7 @@ function bindDom() {
     'intent-main', 'intent-desc', 'enemy-portrait', 'enemy-name', 'enemy-tag', 'enemy-hp-fill',
     'enemy-hp-ghost', 'enemy-hp-text', 'enemy-chips', 'combat-log', 'hint-bar',
     'overlay-gameover', 'go-skull', 'go-title', 'go-reason', 'go-stats', 'restart-btn', 'fx-layer',
-    'overlay-tutorial', 'tut-start-btn', 'help-btn']
+    'overlay-tutorial', 'tut-start-btn', 'help-btn', 'sound-btn']
     .forEach(id => { el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = $(id); });
 }
 
@@ -755,6 +880,7 @@ function renderContext() {
   el.game.classList.add(`mode-${m.toLowerCase()}`);
   DUNGEONS.forEach(d => el.game.classList.remove(d.theme));
   if (state.dungeon) el.game.classList.add(state.dungeon.def.theme);
+  Sound.setMode(m);
 
   el.panelStory.hidden = m !== 'STORY';
   el.panelDungeon.hidden = !(m === 'DUNGEON' || m === 'REWARD');
@@ -816,6 +942,10 @@ function dealCard(card) {
   renderHint();
   renderPips();
   inputLocked = false;
+
+  // Stabiler Punkt: aktuellen Kartendeskriptor merken und Spielstand sichern
+  state.view = card.save || { kind: card.kind };
+  persist();
 }
 
 /* ============================================================
@@ -874,6 +1004,7 @@ function makeStoryCard(def) {
   state.lastStoryId = def.id;
   return {
     kind: 'story',
+    save: { kind: 'story', id: def.id },
     emoji: def.emoji,
     title: def.who,
     text: def.text,
@@ -933,6 +1064,7 @@ function enterDungeon(id) {
   };
   state.mode = 'DUNGEON';
   state.chronicle.push({ day: state.day, text: `Expedition in ${def.name} begonnen.` });
+  Sound.play('portal');
   renderContext();
   renderLeft();
   toast(`${def.emoji} ${def.name} — Ebenen: ${def.levels}`);
@@ -982,16 +1114,18 @@ function rollDoor() {
   return { type: pickWeighted(ROOM_WEIGHTS), hidden: Math.random() < 0.35 };
 }
 
-function makeCrossroadCard(targetLevel, introText = null) {
+function makeCrossroadCard(targetLevel, introText = null, savedLeft = null, savedRight = null) {
   const d = state.dungeon;
-  let left = rollDoor(), right = rollDoor();
-  if (left.type === right.type) right = rollDoor();
+  let left = savedLeft || rollDoor();
+  let right = savedRight || rollDoor();
+  if (!savedLeft && !savedRight && left.type === right.type) right = rollDoor();
   const doorInfo = (door) => door.hidden
     ? { ico: '❓', label: 'Unbekannt' }
     : { ico: ROOM_META[door.type].ico, label: ROOM_META[door.type].label };
   return {
     kind: 'crossroad',
     emoji: '⛩️',
+    save: { kind: 'crossroad', targetLevel, left, right, introText },
     title: `Weggabelung`,
     text: introText || 'Zwei Durchgänge liegen vor dir. Deine Fackel reicht nicht weit genug, um beide zu deuten.',
     caption: `${d.def.name} — vor Ebene ${targetLevel}`,
@@ -1004,6 +1138,7 @@ function makeCrossroadCard(targetLevel, introText = null) {
     onResolve(dir) {
       const door = dir === 'left' ? left : right;
       d.level = targetLevel;
+      Sound.play('door');
       if (!consumeTorch()) return;
       dealCard(makeRoomCard(door.type));
     },
@@ -1020,7 +1155,7 @@ function makeEnemyInstance(defOrId, { affix = null } = {}) {
   };
 }
 
-function makeRoomCard(type) {
+function makeRoomCard(type, saved = {}) {
   const d = state.dungeon;
   const meta = ROOM_META[type];
   const caption = `${d.def.name} — Ebene ${d.level}/${d.def.levels}`;
@@ -1028,11 +1163,12 @@ function makeRoomCard(type) {
   switch (type) {
     case 'fight': case 'elite': {
       const elite = type === 'elite';
-      const affix = elite ? pick(AFFIXES) : null;
-      const enemyDef = ENEMIES[pick(d.def.enemies)];
+      const affix = elite ? (saved.affix ? AFFIXES.find(a => a.id === saved.affix) : pick(AFFIXES)) : null;
+      const enemyDef = ENEMIES[saved.enemyId] || ENEMIES[pick(d.def.enemies)];
       const cost = elite ? CONFIG.sneakCostElite : CONFIG.sneakCost;
       return {
         kind: 'room', emoji: enemyDef.emoji,
+        save: { kind: 'room', roomType: type, enemyId: enemyDef.id, affix: affix ? affix.id : null },
         title: elite ? `${affix.name}er ${enemyDef.name}` : enemyDef.name,
         text: elite
           ? `Ein ${enemyDef.name} — aber falsch, größer, zorniger. ${affix.name}: ${affix.desc}. Der Umweg wäre lang und dunkel.`
@@ -1053,7 +1189,7 @@ function makeRoomCard(type) {
       };
     }
     case 'treasure': return {
-      kind: 'room', emoji: '🧰', title: 'Verstaubte Truhe',
+      kind: 'room', save: { kind: 'room', roomType: 'treasure' }, emoji: '🧰', title: 'Verstaubte Truhe',
       text: 'Eine Truhe, halb im Schutt versunken. Das Schloss ist längst Rost — aber Truhen in der Tiefe haben manchmal Zähne.',
       caption,
       labels: { left: 'Stehen lassen', right: 'Öffnen', up: '', down: '' },
@@ -1073,7 +1209,7 @@ function makeRoomCard(type) {
       },
     };
     case 'altar': return {
-      kind: 'room', emoji: '🕯️', title: 'Vergessener Altar',
+      kind: 'room', save: { kind: 'room', roomType: 'altar' }, emoji: '🕯️', title: 'Vergessener Altar',
       text: 'Ein Altar aus schwarzem Stein. Die Inschrift verspricht Kraft für Blut — oder Licht für ein stilles Gebet.',
       caption,
       labels: { left: `Beten (+${CONFIG.altarTorches} 🔥)`, right: `${CONFIG.altarHpCost} ❤️ opfern (Segen)`, up: '', down: '' },
@@ -1102,7 +1238,7 @@ function makeRoomCard(type) {
       return makeMerchantCard(0);
     }
     case 'campfire': return {
-      kind: 'room', emoji: '⛺', title: 'Verlassenes Lager',
+      kind: 'room', save: { kind: 'room', roomType: 'campfire' }, emoji: '⛺', title: 'Verlassenes Lager',
       text: 'Glut, die noch warm ist, und ein Wetzstein daneben. Wer auch immer hier rastete — er hatte es eilig.',
       caption,
       labels: { left: `Rasten (+${CONFIG.campfireHeal} ❤️)`, right: `Waffe schärfen (+${CONFIG.sharpenBonus} Schaden)`, up: '', down: '' },
@@ -1121,7 +1257,7 @@ function makeRoomCard(type) {
       },
     };
     case 'trap': return {
-      kind: 'room', emoji: '🕸️', title: 'Alte Fallgrube',
+      kind: 'room', save: { kind: 'room', roomType: 'trap' }, emoji: '🕸️', title: 'Alte Fallgrube',
       text: 'Der Boden vor dir ist eingebrochen — rostige Spitzen glitzern unten. Ein schmaler Sims führt außen herum, aber er kostet Zeit und Licht.',
       caption,
       labels: { left: 'Vorsichtig umgehen (−1 🔥)', right: 'Riskant hinüberspringen', up: '', down: '' },
@@ -1145,9 +1281,10 @@ function makeRoomCard(type) {
       },
     };
     case 'event': {
-      const ev = pick(d.def.events);
+      const idx = Number.isInteger(saved.eventIdx) ? saved.eventIdx : Math.floor(Math.random() * d.def.events.length);
+      const ev = d.def.events[idx];
       return {
-        kind: 'room', emoji: ev.emoji, title: ev.title, text: ev.text, caption,
+        kind: 'room', save: { kind: 'room', roomType: 'event', eventIdx: idx }, emoji: ev.emoji, title: ev.title, text: ev.text, caption,
         labels: { left: ev.left.label, right: ev.right.label, up: '', down: '' },
         onResolve(dir) {
           const fx = (dir === 'left' ? ev.left : ev.right).fx;
@@ -1186,11 +1323,11 @@ function makeMerchantOffers() {
 function makeMerchantCard(idx) {
   const d = state.dungeon;
   const o = d.offers[idx];
-  const name = o.type === 'torch' ? `Fackelbündel (+${o.n} 🔥)` : o.item.name;
+  const name = o.type === 'torch' ? `Fackelbündel (+${o.n} 🔥)` : (o.type === 'gear' ? o.item.def.name : o.item.name);
   const emoji = o.type === 'torch' ? '🔥' : (o.type === 'gear' ? o.item.def.emoji : o.item.emoji);
   const detail = o.type === 'gear' ? gearDetail(o.item) : (o.type === 'potion' ? o.item.desc : 'Licht für die Tiefe');
   return {
-    kind: 'room', emoji: '🧙', title: `Angebot ${idx + 1}/3: ${name}`,
+    kind: 'room', save: { kind: 'merchant', idx }, emoji: '🧙', title: `Angebot ${idx + 1}/3: ${name}`,
     text: `Ein vermummter Händler breitet seine Waren aus. „${name} — ${detail}. Für dich: ${o.price} Gold."`,
     caption: `${d.def.name} — Ebene ${d.level}/${d.def.levels} · 🪙 ${state.player.gold} Gold`,
     labels: { left: 'Weitergehen', right: `Kaufen (−${o.price} 🪙)`, up: '', down: '' },
@@ -1204,6 +1341,7 @@ function makeMerchantCard(idx) {
     onResolve(dir) {
       if (dir === 'right') {
         state.player.gold -= o.price;
+        Sound.play('coin');
         if (o.type === 'torch') { d.torches += o.n; toast(`🔥 +${o.n} Fackeln`); }
         else if (o.type === 'potion') { takePotion(o.item); toast(`🧪 ${o.item.name} eingesteckt`); }
         else { takeToInventory(o.item); toast(`🎒 ${o.item.def.name} im Inventar`); }
@@ -1219,7 +1357,7 @@ function makeAntechamberCard() {
   const d = state.dungeon;
   const boss = BOSSES[d.def.boss];
   return {
-    kind: 'room', emoji: '🚪', title: 'Die Vorkammer',
+    kind: 'room', save: { kind: 'antechamber' }, emoji: '🚪', title: 'Die Vorkammer',
     text: `Hinter dem Tor wummert etwas Gewaltiges: ${boss.name} wartet. Dies ist der letzte Ort zum Atemholen — dahinter gibt es kein Zurück.`,
     caption: `${d.def.name} — Ebene ${d.level}/${d.def.levels} · Point of no Return`,
     labels: { left: `Rasten (+${CONFIG.antechamberHeal} ❤️)`, right: 'Klinge wetzen (+2 Schaden)', up: '', down: '' },
@@ -1243,7 +1381,7 @@ function makeBossCard() {
   const d = state.dungeon;
   const boss = BOSSES[d.def.boss];
   return {
-    kind: 'room', emoji: boss.emoji, title: boss.name,
+    kind: 'room', save: { kind: 'boss' }, emoji: boss.emoji, title: boss.name,
     text: `Das Tor birst. ${boss.name} erhebt sich vor dir — Herr über ${d.def.name}. Es gibt nur einen Weg zurück ans Tageslicht: durch ihn hindurch.`,
     caption: `${d.def.name} — Ebene ${d.def.levels}/${d.def.levels} · BOSS`,
     labels: { left: 'Angriff!', right: 'Angriff!', up: '', down: '' },
@@ -1319,6 +1457,7 @@ function makeCombatCard() {
   const { main } = intentLine(c.intent);
   return {
     kind: 'combat',
+    save: { kind: 'combat' },
     emoji: en.def.emoji,
     title: `Runde ${c.round}`,
     text: `${en.def.name} kündigt an: ${main}. Was tust du?`,
@@ -1374,6 +1513,7 @@ function playerStrike(mult, { ignoreBlock = false, forceCrit = false } = {}) {
   en.hp = Math.max(0, en.hp - dmg);
   el.enemyPortrait.classList.remove('hit'); void el.enemyPortrait.offsetWidth;
   el.enemyPortrait.classList.add('hit');
+  Sound.play(crit ? 'crit' : 'attack');
   floatNum(el.enemyPortrait, `−${dmg}`, crit ? 'crit' : 'dmg');
   log(`Du triffst für <span class="${crit ? 'crit' : 'dmg'}">${dmg}${crit ? ' ⚡KRITISCH' : ''}</span>${absorbed ? ` <span class="info">(${absorbed} geblockt)</span>` : ''}${c.combo > 0 ? ` <span class="info">[Combo ×${comboMult().toFixed(2)}]</span>` : ''}.`);
   return { dmg, crit };
@@ -1384,6 +1524,7 @@ function healPlayer(n, label = '') {
   state.res.hp = clamp(state.res.hp + n, 0, 100);
   const healed = Math.round(state.res.hp - before);
   if (healed > 0) {
+    Sound.play('heal');
     floatNum($('res-hp'), `+${healed}`, 'heal');
     log(`<span class="heal">+${healed} ❤️</span>${label ? ' ' + label : ''}`);
   }
@@ -1392,6 +1533,7 @@ function healPlayer(n, label = '') {
 function doSpecial() {
   const c = state.combat, en = c.enemy;
   const sp = state.player.weapon.special;
+  Sound.play('special');
   log(`✨ <span class="info">${sp.name}!</span>`);
   switch (sp.type) {
     case 'mult': playerStrike(sp.mult); break;
@@ -1432,6 +1574,7 @@ function usePotion() {
   const pot = p.potions[idx];
   p.potions[idx] = null;
   const c = state.combat, en = c.enemy;
+  Sound.play('potion');
   log(`🧪 Du nutzt <span class="info">${pot.name}</span>.`);
   switch (pot.id) {
     case 'heiltrank': healPlayer(30, '(Heiltrank)'); break;
@@ -1463,6 +1606,7 @@ function nextIntent(en) {
     if (!en.phase2 && en.hp <= en.maxHp / 2) {
       en.phase2 = true; en.pi = 0;
       shake(true);
+      Sound.play('boss');
       log(`⚠️ <span class="crit">${def.name} tritt in PHASE 2!</span>`);
       toast(`⚠️ ${def.name} — PHASE 2!`);
     }
@@ -1516,6 +1660,7 @@ async function enemyTurn() {
     if (taken > 0) {
       state.res.hp = clamp(state.res.hp - taken, 0, 100);
       c.combo = 0; // erlittener Treffer bricht die Combo
+      Sound.play('hurt');
       floatNum($('res-hp'), `−${taken}`, 'dmg');
       playerHitFx();
       shake(en.def.boss);
@@ -1591,6 +1736,7 @@ function tickStatuses() {
           en.hp = Math.max(0, en.hp - s.v);
           floatNum(el.enemyPortrait, `−${s.v}`, 'dmg');
         }
+        Sound.play('poison');
         log(`${ico} ${who} ${isPlayer ? 'erleidest' : 'erleidet'} <span class="dmg">${s.v}</span> (${STATUS_META[s.id].name}).`);
       }
       if (s.id === 'regen') {
@@ -1620,6 +1766,7 @@ async function combatAction(dir) {
     c.playerBlockVal = calcStats().block;
     c.combo = 0;
     gainFocus(1);
+    Sound.play('block');
     floatNum(el.swipeCard, `🛡️ ${c.playerBlockVal}`, 'block');
     log(`🛡️ Du gehst in Deckung (Block ${c.playerBlockVal}).`);
   } else if (dir === 'right') {
@@ -1672,6 +1819,8 @@ async function victory() {
   if (c.elite) gold = Math.round(gold * 1.6);
   p.gold += gold;
   state.stats.goldEarned += gold;
+  Sound.play('enemyDie');
+  Sound.play(c.boss ? 'victory' : 'coin');
   log(`🏆 <span class="crit">${en.def.name} besiegt!</span> +${gold} 🪙`);
   floatNum(el.enemyPortrait, '💀', 'crit');
   if (p.trinket && p.trinket.id === 'herzstein') healPlayer(5, '(Herzstein)');
@@ -1758,8 +1907,10 @@ function equipFromInventory(idx) {
   p[slotKey] = item.def;
   if (old) p.inventory[idx] = { cat: item.cat, def: old };
   else p.inventory.splice(idx, 1);
+  Sound.play('click');
   toast(`✅ ${item.def.name} ausgerüstet`);
   renderLeft();
+  persist();
 }
 
 function sellFromInventory(idx) {
@@ -1769,9 +1920,11 @@ function sellFromInventory(idx) {
   const value = itemValue(item);
   p.gold += value;
   state.stats.goldEarned += value;
+  Sound.play('coin');
   p.inventory.splice(idx, 1);
   toast(`🪙 ${item.def.name} für ${value} Gold verkauft`);
   renderLeft();
+  persist();
 }
 function takePotion(potDef) {
   const idx = state.player.potions.indexOf(null);
@@ -1796,6 +1949,7 @@ function makeLootCard(item, introText = null) {
   const rarityName = { common: 'Gewöhnlich', rare: 'Selten', epic: 'Episch', legendary: 'LEGENDÄR' }[rarity];
   return {
     kind: 'loot',
+    save: { kind: 'loot' },
     emoji,
     title: name,
     text: introText || `Beute: ${name} — ${detail}. ${isTorch || isPotion ? '' : `(${rarityName})`}`,
@@ -1817,15 +1971,19 @@ function makeLootCard(item, introText = null) {
       if (dir === 'left') {
         state.player.gold += value;
         state.stats.goldEarned += value;
+        Sound.play('coin');
         toast(`🪙 +${value} Gold`);
       } else if (isTorch) {
         if (state.dungeon) state.dungeon.torches += item.n;
+        Sound.play('coin');
         toast(`🔥 +${item.n} Fackeln`);
       } else if (isPotion) {
         takePotion(item.def);
+        Sound.play('click');
         toast(`🧪 ${item.def.name} eingesteckt`);
       } else {
         const old = equipDirect(item);
+        Sound.play('click');
         toast(old ? `✅ ${item.def.name} ausgerüstet · ${old.name} ➜ Inventar` : `✅ ${item.def.name} ausgerüstet`);
       }
       renderLeft(); renderDungeonPanel();
@@ -1842,6 +2000,8 @@ function makeLootCard(item, introText = null) {
 function gameOver(death) {
   state.mode = 'GAME_OVER';
   inputLocked = true;
+  clearSave();               // toter Run soll nicht fortgesetzt werden
+  Sound.play('gameover');
   el.goSkull.textContent = death.skull || '💀';
   el.goTitle.textContent = death.title;
   el.goReason.textContent = death.r;
@@ -1864,6 +2024,132 @@ function restart() {
 }
 
 /* ============================================================
+   SPEICHERN & FORTSETZEN — vollständiger Run-State in localStorage.
+   Gesichert an jedem stabilen Punkt (dealCard); Karten werden aus einem
+   serialisierbaren Deskriptor (state.view) deterministisch neu erzeugt.
+   ============================================================ */
+const SAVE_KEY = 'kk-save';
+const SAVE_VERSION = 2;
+
+const afterTag = (fn) => fn === dungeonVictory ? 'victory' : 'continue';
+const afterFromTag = (tag) => tag === 'victory' ? dungeonVictory : dungeonContinue;
+const findGear = (cat, id) => ({ weapon: WEAPONS, armor: ARMORS, trinket: TRINKETS }[cat] || []).find(x => x.id === id);
+
+function itemToSave(it) {
+  return it.cat === 'torch' ? { cat: 'torch', n: it.n } : { cat: it.cat, id: it.def.id };
+}
+function itemFromSave(s) {
+  if (!s) return null;
+  if (s.cat === 'torch') return { cat: 'torch', n: s.n };
+  const def = s.cat === 'potion' ? potionById(s.id) : findGear(s.cat, s.id);
+  return def ? { cat: s.cat, def } : null;
+}
+function offerToSave(o) {
+  if (o.type === 'torch') return { type: 'torch', n: o.n, price: o.price };
+  if (o.type === 'potion') return { type: 'potion', id: o.item.id, price: o.price };
+  return { type: 'gear', cat: o.item.cat, id: o.item.def.id, price: o.price };
+}
+function offerFromSave(s) {
+  if (s.type === 'torch') return { type: 'torch', n: s.n, price: s.price };
+  if (s.type === 'potion') return { type: 'potion', item: potionById(s.id), price: s.price };
+  return { type: 'gear', item: { cat: s.cat, def: findGear(s.cat, s.id) }, price: s.price };
+}
+function combatToSave(c) {
+  const en = c.enemy;
+  return {
+    enemy: { id: en.def.id, hp: en.hp, maxHp: en.maxHp, block: en.block, charged: en.charged,
+      statuses: en.statuses, pi: en.pi, phase2: en.phase2, heat: en.heat, healCd: en.healCd, quirkUsed: en.quirkUsed },
+    elite: c.elite, boss: c.boss, affix: c.affix ? c.affix.id : null,
+    round: c.round, focus: c.focus, combo: c.combo, pStatuses: c.pStatuses,
+    intent: c.intent, log: c.log, after: afterTag(c.after),
+  };
+}
+function combatFromSave(s) {
+  const def = ENEMIES[s.enemy.id] || BOSSES[s.enemy.id];
+  const en = { def, hp: s.enemy.hp, maxHp: s.enemy.maxHp, block: s.enemy.block, charged: s.enemy.charged,
+    statuses: s.enemy.statuses, pi: s.enemy.pi, phase2: s.enemy.phase2, heat: s.enemy.heat, healCd: s.enemy.healCd, quirkUsed: s.enemy.quirkUsed };
+  return { enemy: en, elite: s.elite, boss: s.boss, affix: s.affix ? AFFIXES.find(a => a.id === s.affix) : null,
+    after: afterFromTag(s.after), round: s.round, focus: s.focus, combo: s.combo,
+    pStatuses: s.pStatuses, playerBlocked: false, playerBlockVal: 0, intent: s.intent, log: s.log };
+}
+
+/** Schreibt den kompletten Run-State nach localStorage (No-Op bei Game Over / kein Storage). */
+function persist() {
+  if (!state || state.mode === 'GAME_OVER') return;
+  try {
+    const p = state.player;
+    const snap = {
+      v: SAVE_VERSION, mode: state.mode, day: state.day, res: state.res,
+      player: {
+        gold: p.gold, weapon: p.weapon.id, armor: p.armor.id, trinket: p.trinket ? p.trinket.id : null,
+        potions: p.potions.map(x => x ? x.id : null), inventory: p.inventory.map(itemToSave),
+      },
+      cleared: state.cleared, flags: state.flags, pending: state.pending, seen: state.seen,
+      lastStoryId: state.lastStoryId, chronicle: state.chronicle.slice(-40), stats: state.stats, view: state.view,
+      dungeon: state.dungeon ? {
+        defId: state.dungeon.def.id, level: state.dungeon.level, torches: state.dungeon.torches,
+        steps: state.dungeon.steps, run: state.dungeon.run,
+        offers: state.dungeon.offers ? state.dungeon.offers.map(offerToSave) : null,
+      } : null,
+      combat: state.combat ? combatToSave(state.combat) : null,
+      reward: state.reward ? { queue: state.reward.queue.map(itemToSave), after: afterTag(state.reward.after) } : null,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(snap));
+  } catch (e) {}
+}
+function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
+
+/** Stellt einen gespeicherten Run wieder her und deckt die aktuelle Karte auf. */
+function loadSave() {
+  let snap;
+  try { const raw = localStorage.getItem(SAVE_KEY); if (!raw) return false; snap = JSON.parse(raw); }
+  catch (e) { return false; }
+  if (!snap || snap.v !== SAVE_VERSION || snap.mode === 'GAME_OVER') { clearSave(); return false; }
+  try {
+    initState();
+    state.mode = snap.mode; state.day = snap.day; state.res = snap.res;
+    const P = snap.player, pl = state.player;
+    pl.gold = P.gold;
+    pl.weapon = findGear('weapon', P.weapon) || WEAPONS[0];
+    pl.armor = findGear('armor', P.armor) || ARMORS[0];
+    pl.trinket = P.trinket ? findGear('trinket', P.trinket) : null;
+    pl.potions = P.potions.map(id => id ? potionById(id) : null);
+    pl.inventory = P.inventory.map(itemFromSave).filter(Boolean);
+    state.cleared = snap.cleared; state.flags = snap.flags; state.pending = snap.pending; state.seen = snap.seen;
+    state.lastStoryId = snap.lastStoryId; state.chronicle = snap.chronicle; state.stats = snap.stats;
+    if (snap.dungeon) {
+      state.dungeon = {
+        def: dungeonById(snap.dungeon.defId), level: snap.dungeon.level, torches: snap.dungeon.torches,
+        steps: snap.dungeon.steps, run: snap.dungeon.run,
+        offers: snap.dungeon.offers ? snap.dungeon.offers.map(offerFromSave) : undefined,
+      };
+    }
+    if (snap.combat) state.combat = combatFromSave(snap.combat);
+    if (snap.reward) state.reward = { queue: snap.reward.queue.map(itemFromSave).filter(Boolean), after: afterFromTag(snap.reward.after) };
+    if (state.combat) el.combatLog.innerHTML = (state.combat.log || []).join('');
+    renderContext(); renderLeft();
+    rebuildCard(snap.view);
+    return true;
+  } catch (e) { clearSave(); return false; }
+}
+
+/** Erzeugt die zuletzt gezeigte Karte aus ihrem Deskriptor neu. */
+function rebuildCard(view) {
+  const v = view || { kind: 'story' };
+  switch (v.kind) {
+    case 'crossroad': dealCard(makeCrossroadCard(v.targetLevel, v.introText, v.left, v.right)); break;
+    case 'room': dealCard(makeRoomCard(v.roomType, v)); break;
+    case 'merchant': dealCard(makeMerchantCard(v.idx || 0)); break;
+    case 'antechamber': dealCard(makeAntechamberCard()); break;
+    case 'boss': dealCard(makeBossCard()); break;
+    case 'combat': dealCard(makeCombatCard()); break;
+    case 'loot': dealCard(makeLootCard(state.reward.queue[0])); break;
+    default: dealCard(makeStoryCard(storyDefById(v.id) || storyDefById(state.lastStoryId) || drawStoryDef('mutter'))); break;
+  }
+}
+
+/* ============================================================
    INPUT — Pointer-Physik (Drag, Spring-Back, Fly-Out, 4 Richtungen)
    ============================================================ */
 const drag = { active: false, sx: 0, sy: 0, dx: 0, dy: 0, raf: 0 };
@@ -1872,6 +2158,7 @@ function setupInput() {
   const card = el.swipeCard;
 
   card.addEventListener('pointerdown', (e) => {
+    Sound.resume();   // Audio-Context beim ersten Nutzer-Gesture aktivieren
     if (inputLocked || state.mode === 'GAME_OVER') return;
     drag.active = true;
     drag.sx = e.clientX; drag.sy = e.clientY;
@@ -1890,10 +2177,15 @@ function setupInput() {
   card.addEventListener('pointerup', finishDrag);
   card.addEventListener('pointercancel', finishDrag);
 
-  el.retreatBtn.addEventListener('click', retreat);
-  el.restartBtn.addEventListener('click', restart);
-  el.tutStartBtn.addEventListener('click', closeTutorial);
-  el.helpBtn.addEventListener('click', showTutorial);
+  el.retreatBtn.addEventListener('click', () => { Sound.play('click'); retreat(); });
+  el.restartBtn.addEventListener('click', () => { Sound.play('click'); restart(); });
+  el.tutStartBtn.addEventListener('click', () => { Sound.play('click'); closeTutorial(); });
+  el.helpBtn.addEventListener('click', () => { Sound.play('click'); showTutorial(); });
+  el.soundBtn.addEventListener('click', () => {
+    Sound.setEnabled(!Sound.isEnabled());
+    updateSoundBtn();
+    if (Sound.isEnabled()) Sound.play('click');
+  });
 
   // Inventar: Ausrüsten/Verkaufen per Button (Event-Delegation)
   el.invList.addEventListener('click', (e) => {
@@ -2014,6 +2306,7 @@ function springBack() {
 
 function flyOut(dir) {
   const card = el.swipeCard;
+  Sound.play('swipe');
   card.classList.remove('dragging');
   card.classList.add('flying');
   const W = window.innerWidth, H = window.innerHeight;
@@ -2032,11 +2325,24 @@ function flyOut(dir) {
 function init() {
   bindDom();
   setupInput();
+  Sound.load();
+  updateSoundBtn();
   initState();
-  renderContext();
-  renderLeft();
-  dealCard(makeStoryCard(drawStoryDef('mutter')));
-  showTutorial();   // Ein-Seiten-Erklärung über der ersten Karte
+  if (loadSave()) {
+    // Laufender Run wird fortgesetzt (ohne Tutorial-Overlay)
+    toast('⚜️ Herrschaft fortgesetzt', 2600);
+  } else {
+    renderContext();
+    renderLeft();
+    dealCard(makeStoryCard(drawStoryDef('mutter')));
+    showTutorial();   // Ein-Seiten-Erklärung über der ersten Karte
+  }
+}
+
+function updateSoundBtn() {
+  const on = Sound.isEnabled();
+  el.soundBtn.textContent = on ? '🔊' : '🔇';
+  el.soundBtn.title = on ? 'Ton aus' : 'Ton an';
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -2059,6 +2365,11 @@ window.__kk = {
     const item = WEAPONS.find(w => w.id === id) || ARMORS.find(a => a.id === id) || TRINKETS.find(t => t.id === id);
     if (item) { state.player[WEAPONS.includes(item) ? 'weapon' : ARMORS.includes(item) ? 'armor' : 'trinket'] = item; renderLeft(); }
   },
+  save: () => persist(),
+  reload: () => { initState(); return loadSave(); },
+  raw: () => { try { return JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return null; } },
+  clearSave, hasSave,
+  sound: (on) => { Sound.setEnabled(on); updateSoundBtn(); },
 };
 
 })();
