@@ -477,8 +477,8 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
    SFX + subtiler Ambient-Pad je Modus. Ein Master-Mute (in localStorage).
    ============================================================ */
 const Sound = (() => {
-  let ctx = null, master = null, sfxGain = null, musicGain = null;
-  let enabled = true, desiredMode = null, pad = null, padMode = null;
+  let ctx = null, master = null, sfxGain = null;
+  let enabled = true;
 
   function ensure() {
     if (ctx) return;
@@ -487,10 +487,8 @@ const Sound = (() => {
       ctx = new AC();
       master = ctx.createGain(); master.gain.value = 0.85; master.connect(ctx.destination);
       sfxGain = ctx.createGain(); sfxGain.gain.value = 1; sfxGain.connect(master);
-      musicGain = ctx.createGain(); musicGain.gain.value = 1; musicGain.connect(master);
     } catch (e) { ctx = null; }
   }
-  function running() { return ctx && ctx.state === 'running'; }
 
   /** Ton mit weicher Hüllkurve (kein Klicken); optionaler Frequenz-Slide. */
   function tone({ freq = 440, type = 'sine', dur = 0.15, gain = 0.2, attack = 0.006, slideTo = null, when = 0 }) {
@@ -540,60 +538,22 @@ const Sound = (() => {
     gameover:() => [392, 330, 262, 196].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.55, gain: 0.13, when: i * 0.24 })),
   };
 
-  function buildPad(mode) {
-    stopPad();
-    if (!ctx || !enabled) return;
-    const roots = { STORY: 130.81, DUNGEON: 98.0, COMBAT: 82.41, REWARD: 146.83, GAME_OVER: 65.41 };
-    const root = roots[mode] || 110;
-    const filt = ctx.createBiquadFilter();
-    filt.type = 'lowpass'; filt.frequency.value = mode === 'COMBAT' ? 900 : 620; filt.Q.value = 0.5;
-    filt.connect(musicGain);
-    const g = ctx.createGain(); g.gain.value = 0.0001; g.connect(filt);
-    g.gain.setTargetAtTime(mode === 'COMBAT' ? 0.05 : 0.036, ctx.currentTime, 0.9);
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
-    const lg = ctx.createGain(); lg.gain.value = 0.014; lfo.connect(lg); lg.connect(g.gain); lfo.start();
-    const nodes = [lfo];
-    const intervals = mode === 'COMBAT' ? [1, 1.5, 2] : [1, 1.5, 2, 3];
-    intervals.forEach((mul, i) => {
-      const o = ctx.createOscillator();
-      o.type = i === 0 ? 'triangle' : 'sine';
-      o.frequency.value = root * mul * (1 + (i - 1) * 0.002);
-      o.connect(g); o.start(); nodes.push(o);
-    });
-    pad = { nodes, gain: g }; padMode = mode;
-  }
-  function stopPad() {
-    if (!pad) return;
-    try {
-      pad.gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.4);
-      pad.nodes.forEach(n => { try { n.stop(ctx.currentTime + 1.2); } catch (e) {} });
-    } catch (e) {}
-    pad = null; padMode = null;
-  }
-  function syncPad() {
-    if (!ctx) return;
-    if (!enabled) { stopPad(); return; }
-    if (desiredMode && padMode !== desiredMode) buildPad(desiredMode);
-  }
-
-  function resume() { ensure(); if (!ctx) return; if (ctx.state === 'suspended') ctx.resume(); syncPad(); }
-  function setMode(mode) { desiredMode = mode; if (running()) syncPad(); }
+  function resume() { ensure(); if (ctx && ctx.state === 'suspended') ctx.resume(); }
   function play(name) {
     if (!enabled) return;
     ensure(); if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume();
-    syncPad();
     const fn = SFX[name];
     if (fn) { try { fn(); } catch (e) {} }
   }
   function setEnabled(on) {
     enabled = on;
     try { localStorage.setItem('kk-sound', on ? '1' : '0'); } catch (e) {}
-    if (!on) stopPad(); else { ensure(); if (ctx && ctx.state === 'suspended') ctx.resume(); syncPad(); }
+    if (on) resume();
   }
   function load() { try { enabled = localStorage.getItem('kk-sound') !== '0'; } catch (e) {} return enabled; }
 
-  return { play, setMode, setEnabled, isEnabled: () => enabled, load, resume };
+  return { play, setEnabled, isEnabled: () => enabled, load, resume };
 })();
 
 /* ============================================================
@@ -880,7 +840,6 @@ function renderContext() {
   el.game.classList.add(`mode-${m.toLowerCase()}`);
   DUNGEONS.forEach(d => el.game.classList.remove(d.theme));
   if (state.dungeon) el.game.classList.add(state.dungeon.def.theme);
-  Sound.setMode(m);
 
   el.panelStory.hidden = m !== 'STORY';
   el.panelDungeon.hidden = !(m === 'DUNGEON' || m === 'REWARD');
