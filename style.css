@@ -834,10 +834,9 @@ body {
 #restart-btn { margin-top: clamp(6px, 1.5vh, 16px); padding: 12px 26px; font-size: clamp(13px, 1.7vh, 17px); }
 
 /* ============ TUTORIAL (One-Pager) ============ */
-#help-btn {
+#help-btn, #sound-btn {
   position: fixed;
   bottom: clamp(6px, 1vh, 12px);
-  right: clamp(8px, 1vw, 16px);
   z-index: 70;
   width: clamp(26px, 3.2vh, 34px);
   height: clamp(26px, 3.2vh, 34px);
@@ -850,7 +849,9 @@ body {
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
 }
-#help-btn:hover { border-color: var(--gold); box-shadow: 0 0 12px rgba(212, 175, 55, 0.45); transform: translateY(-1px); }
+#help-btn { right: clamp(8px, 1vw, 16px); }
+#sound-btn { right: clamp(42px, 4.6vw, 58px); }
+#help-btn:hover, #sound-btn:hover { border-color: var(--gold); box-shadow: 0 0 12px rgba(212, 175, 55, 0.45); transform: translateY(-1px); }
 
 #overlay-tutorial {
   position: fixed;
